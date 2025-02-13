@@ -1,0 +1,193 @@
+---
+title: "Influência do Comportamento Sedentário no Desenvolvimento da Doença Hepática Gordurosa Associada à Disfunção Metabólica: Análise Exploratória com Dados do NHANES"
+author: "Guilherme Ferreira"
+date: "2024-12-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+################################################################################
+# Sites importantes
+# https://wwwn.cdc.gov/nchs/nhanes/search/default.aspx
+# https://www.epirhandbook.com/en/
+# https://wwwn.cdc.gov/nchs/data/tutorials/module3_examples_R.r
+#https://libstc.cc/#/stc/nid:6e7ka238xj6qcuyf7dkdkuyfo
+################################################################################
+
+```{r Packages}
+rm(list = ls())
+
+# Installing packages
+
+#nstall.packages("survey")
+#install.packages("tidyverse")
+#install.packages("skimr")
+#install.packages("lmtest")
+#install.packages("nortest")
+#install.packages("gtsummary")
+#install.packages("DescTools")
+#install.packages("ggplot2")
+#install.packages("gtsummary")
+#install.packages("broom")
+#install.packages("rstatix")
+
+
+#Download packages
+
+library(survey)
+library(tidyverse)
+#library(skimr)
+#library(lmtest)
+#library(nortest)
+#library(gtsummary)
+#library(DescTools)
+#library(ggplot2)
+#library(gtsummary)
+#library(broom)
+#library(rstatix)
+
+# Display Version Information 
+cat("R package versions:\n")
+for (p in c("base", "survey","dplyr")) { 
+  cat(p, ": ", as.character(packageVersion(p)), "\n")
+}
+```
+```{r function to download the required survey cycles for a component file }
+downloadNHANES <- function(file, yrs){
+  print (file)
+  outdf <- data.frame(NULL)
+  for (j in seq_along(file)){
+    urlstring <- paste('wwwn.cdc.gov/Nchs/Data/Nhanes/Public/',yrs[j], '/DataFiles/',file[j],'.XPT', sep='')
+    download.file(urlstring, tf <- tempfile(), mode="wb")
+    tmpframe <- foreign::read.xport(tf)
+    outdf <- bind_rows(outdf, tmpframe)
+  }
+  return(outdf)
+}
+
+```
+
+```{r Selecting tables}
+# Specify the survey cycles required, with corresponding file suffixes
+yrs <- c('2017','2021')
+
+# Demographic data
+table_demo <- c('P_DEMO', 'DEMO_L')
+
+# Examination data
+table_bpxo <- c('P_BPXO', 'BPXO_L')
+table_bmx <- c('P_BMX', 'BMX_L') 
+table_lux <- c('P_LUX', 'LUX_L') 
+table_fastqx <- c('P_FASTQX', 'FASTQX_L') 
+
+# Laboratory Data
+table_alb_cr <- c('P_ALB_CR') # there is no Albumin/creatinine ratio in 2021 cycle 
+table_ucpreg <- c('P_UCPREG', 'UCPREG_L') 
+table_hepa <- c('P_HEPA', 'HEPA_L')
+table_hepb_s <- c('P_HEPB_S', 'HEPB_S_L') 
+table_hepbd <- c('P_HEPBD') # there is no HEPBD table in 2021 cycle
+table_hepc <- c('P_HEPC') # there is no HEPC table in 2021 cycle
+table_tchol <- c('P_TCHOL', 'TCHOL_L') 
+table_hdl <- c('P_HDL', 'HDL_L') 
+table_glu <- c('P_GLU', 'GLU_L') 
+table_ins <- c('P_INS', 'INS_L') 
+table_ghb <- c('P_GHB', 'GHB_L') 
+table_trigly <- c('P_TRIGLY') # there is no HEPC table in 2021 cycle
+table_biopro <- c('P_BIOPRO') # there is no biopro in 2021 cycle
+
+# Questionnaire Data
+table_bpq <- c('P_BPQ', 'BPQ_L') 
+table_heq <- c('P_HEQ', 'HEQ_L') 
+table_paq <- c('P_PAQ', 'PAQ_L') 
+table_diq <- c('P_DIQ', 'DIQ_L') 
+table_smq <- c('P_SMQ', 'SMQ_L') 
+# table_rxq_rx <- c('P_RXQ_RX', 'RXQ_RX_L') 
+table_dbq <- c('P_DBQ', 'DBQ_L') 
+table_alq <- c('P_ALQ', 'ALQ_L') 
+table_mcq <- c('P_MCQ', 'MCQ_L') 
+
+# Dietary data
+table_dr1tot <- c('P_DR1TOT', 'DR1TOT_L')
+table_dr2tot <- c('P_DR2TOT', 'DR2TOT_L')
+
+```
+**_NOTE_**: Tabelas não disponiveis para o ciclo 2021: BIOPRO (ALT, AST), TRIGLY (LDLc and Triglycerides), ALB_CR (albumin/creatinine ratio), HEPBD, HEPC.
+
+```{r Downloading tables}
+DEMO <- downloadNHANES(table_demo, yrs) # Demographic
+BPX <- downloadNHANES(table_bpxo, yrs)  # Blood pressure
+BMX <- downloadNHANES(table_bmx, yrs) # Body Measures
+LUX <- downloadNHANES(table_lux, yrs) # Liver Ultrasound Transient Elastography
+FASTQX <- downloadNHANES(table_fastqx, yrs) # Fasting questionnaire
+ALB_CR <- downloadNHANES(table_alb_cr, yrs) # Albumin
+UCPREG <- downloadNHANES(table_ucpreg, yrs) 
+HEPA <- downloadNHANES(table_hepa, yrs)  # Hepatitis A
+HEPB_S <- downloadNHANES(table_hepb_s, yrs) # Hepatitis B: Surface
+HEPBD <- downloadNHANES(table_hepbd, yrs) # Hepatitis B: Core, Surface antigen, and Hepatitis D
+HEPC <- downloadNHANES(table_hepc, yrs) # Hepatitis C
+TCHOL <- downloadNHANES(table_tchol, yrs) # Total cholesterol
+HDL <- downloadNHANES(table_hdl, yrs) # HDL
+GLU <- downloadNHANES(table_glu, yrs) # Fasting glucose
+INS <- downloadNHANES(table_ins, yrs) # Insulin
+GHB <- downloadNHANES(table_ghb, yrs) # Glycohemoglobin
+TRIGLY <- downloadNHANES(table_trigly, yrs) # TG
+BPQ <- downloadNHANES(table_bpq, yrs) # Hypertension
+HEQ <- downloadNHANES(table_heq, yrs) # Hepatite
+PAQ <- downloadNHANES(table_paq, yrs) # Physical activity
+DIQ <- downloadNHANES(table_diq, yrs) # Diabetes
+SMQ <- downloadNHANES(table_smq, yrs) # Smoke
+BIOPRO <- downloadNHANES(table_biopro, yrs) # Standard Biochemistry
+# RXQ_RX_J <- downloadNHANES('table_rqx_rx, yrs) # Drug use
+DBQ <- downloadNHANES(table_dbq, yrs) # Diet
+ALQ <- downloadNHANES(table_alq, yrs) # Alcohol
+MCQ <- downloadNHANES(table_mcq, yrs) # Medical Conditions - Heart diseases
+DR1TOT <- downloadNHANES(table_dr1tot, yrs) # Diet
+DR2TOT <- downloadNHANES(table_dr2tot, yrs) # Diet_2
+```
+
+```{r Joining tables_1}
+
+# Keep all records in DEMO, even if that SEQN does not match to BPQ or BPX files
+
+df_temp <- select(DEMO, 'SEQN', 'SDDSRVYR', 'RIAGENDR', 'RIDAGEYR', 'RIDRETH1', 'RIDRETH1', 'DMDEDUC2', 'RIDEXPRG', 'INDFMPIR') %>%
+  left_join(., select(BPX, 'SEQN', 'BPXODI1', 'BPXODI2', 'BPXODI3',  'BPXOSY1', 'BPXOSY2', 'BPXOSY3'), by = 'SEQN') %>%
+  left_join(., select(BMX, 'SEQN', 'BMXBMI', 'BMXWAIST'), by = 'SEQN') %>%
+  left_join(., select(LUX, 'SEQN', 'LUAXSTAT', 'LUAPNME', 'LUXSMED', 'LUXSIQR', 'LUXSIQRM', 'LUXCAPM', 'LUXCPIQR'), by = 'SEQN') %>%
+  left_join(., select(ALB_CR, 'SEQN', 'URDACT'), by = 'SEQN') %>%
+  left_join(., select(UCPREG, 'SEQN', 'URXPREG'), by = 'SEQN') %>%
+  left_join(., select(HEPA, 'SEQN', 'LBXHA'), by = 'SEQN') %>%
+  left_join(., select(HEPB_S, 'SEQN', 'LBXHBS'), by = 'SEQN') %>%
+  left_join(., select(HEPBD, 'SEQN', 'LBDHBG', 'LBXHBC'), by = 'SEQN') %>%
+  left_join(., select(HEPC, 'SEQN', 'LBDHCI'), by = 'SEQN') %>%
+  left_join(., select(TCHOL, 'SEQN', 'LBXTC'), by = 'SEQN') %>%
+  left_join(., select(HDL, 'SEQN', 'LBDHDD'), by = 'SEQN') %>%
+  left_join(., select(GLU, 'SEQN', 'LBXGLU'), by = 'SEQN') %>%
+  left_join(., select(INS, 'SEQN', 'LBXIN'), by = 'SEQN') %>%
+  left_join(., select(GHB, 'SEQN', 'LBXGH'), by = 'SEQN') %>%
+  left_join(., select(TRIGLY, 'SEQN', 'LBDLDL', 'LBXTR'), by = 'SEQN') %>%
+  #left_join(., select(FASTQX SEQN, ), by = 'SEQN') %>%
+  left_join(., select(BPQ, 'SEQN', 'BPQ020', 'BPQ080'), by = 'SEQN') %>%
+  left_join(., select(SMQ, 'SEQN', 'SMQ020', 'SMQ040', 'SMQ050Q'), by = 'SEQN') %>%
+  left_join(., select(BIOPRO, 'SEQN', 'LBXSATSI', 'LBXSASSI', 'LBXSGTSI'), by = 'SEQN') %>%
+  left_join(., select(HEQ, 'SEQN', 'HEQ010', 'HEQ030'), by = 'SEQN') %>%
+  left_join(., select(PAQ, 'SEQN', 'PAQ605', 'PAQ610', 'PAD615', 'PAQ620', 'PAQ625', 'PAD630', 'PAQ635', 'PAQ640', 'PAD645', 'PAQ650', 'PAQ655', 'PAD660', 'PAQ665', 'PAQ670', 'PAD675', 'PAD680'), by = 'SEQN') %>%
+  left_join(., select(DIQ, 'SEQN', 'DIQ010', 'DIQ050', 'DIQ070'), by = 'SEQN') %>%
+  left_join(., select(MCQ, 'SEQN', 'MCQ160B', 'MCQ160C', 'MCQ160D', 'MCQ160E', 'MCQ160F', 'MCQ510D', 'MCQ510E'), by = 'SEQN') %>%
+  left_join(., select(ALQ, 'SEQN', 'ALQ111', 'ALQ121', 'ALQ130'), by = 'SEQN') %>%
+  left_join(., select(DR1TOT, 'SEQN', 'DR1DRSTZ', 'DRDINT', 'DR1DAY', 'DRQSDIET', 'DRQSDT1', 'DRQSDT2', 'DRQSDT3', 'DRQSDT4', 'DRQSDT5', 'DRQSDT6', 'DRQSDT7', 'DRQSDT8', 'DRQSDT9', 'DRQSDT10', 'DRQSDT11', 'DRQSDT12', 'DRQSDT91', 'DR1TKCAL', 'DR1TPROT', 'DR1TCARB', 'DR1TSUGR', 'DR1TFIBE', 'DR1TTFAT', 'DR1TSFAT', 'DR1TSFAT', 'DR1TMFAT', 'DR1TPFAT', 'DR1TCHOL', 'DR1TSODI', 'DR1TPOTA'), by = 'SEQN') %>%
+  left_join(., select(DR2TOT, 'SEQN', 'DR2DRSTZ', 'DR2DAY', 'DR2TKCAL', 'DR2TPROT', 'DR2TCARB', 'DR2TSUGR', 'DR2TFIBE', 'DR2TTFAT', 'DR2TSFAT', 'DR2TMFAT', 'DR2TPFAT', 'DR2TCHOL', 'DR2TSODI', 'DR2TPOTA'), by = 'SEQN')
+
+```
+
+```{r Work table}
+View(df_temp)
+```
