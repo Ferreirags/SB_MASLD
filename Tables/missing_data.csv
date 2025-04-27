@@ -1,0 +1,54 @@
+Variable,Missing Data (n),Complete Rate (%)
+Sex (M/F),0,100
+Race,0,100
+RIDRETH3,0,100
+NAFLD (CAP  ≥ 248 db/m),0,100
+MASLD (CAP  ≥ 248 db/m),0,100
+Hepatic Advanced Fibrosis (LSM ≥ 8 kPa),0,100
+Sedentary Behavior quintil,0,100
+ALCOHOL,0,100
+Alcohol Intake,0,100
+Diabetes,0,100
+Hypertension,0,100
+ID,0,100
+WTSAFPRP,0,100
+Age (yr),0,100
+Liver Stifness (Kpa),0,100
+Median CAP (dB/m),0,100
+Sedentary Behavior (h),0,100
+Education,1,99.96
+Smoking Habit,1,99.96
+Leisure-Time Physical Activity,1,99.96
+Walking or Bicycling for Transportation,3,99.89
+work-Related Activity,6,99.78
+MVPA,10,99.63
+MET (hours/week),10,99.63
+Overweight/obesity,15,99.44
+BMI (Kg/m2),22,99.18
+Waist Circumference (cm),58,97.84
+HbA1C (%),115,95.71
+Total Energy Intake (kcal/d),134,95.01
+HDL Baixo,172,93.59
+Total Cholesterol (mg/dL),172,93.59
+HDL-Cholesterol (mg/dL),172,93.59
+ALT (U/L),184,93.14
+GGT (U/L),184,93.14
+SBP (mmHg),193,92.81
+DBP (mmHg),193,92.81
+AST (U/L),193,92.81
+ALT/AST,193,92.81
+Hypertriglyceridemia,196,92.69
+Fasting Glucose (mg/dL),200,92.55
+HSI,211,92.14
+Fasting Triglycerides (mg/dL),241,91.02
+Insulin (µU/mL),250,90.68
+HOMA-IR,250,90.68
+LDL-Cholesterol (mg/dL),261,90.27
+FLI,303,88.71
+Poverty Income Ratio,336,87.48
+Protein Intake (g/d adj for kcal),815,69.62
+Carbohydrate Intake (g/d adj for kcal),815,69.62
+Sugar Intake (g/d adj for kcal),815,69.62
+Total Fat Intake (g/d) adj for kcal),815,69.62
+Saturated Fat Intake (g/d adj for kcal),815,69.62
+Unsaturated Fat Intake (g/d adj for kcal),815,69.62
