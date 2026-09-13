@@ -1,54 +1,69 @@
 Variable,Missing Data (n),Complete Rate (%)
-Sex (M/F),0,100
-Race,0,100
-RIDRETH3,0,100
-NAFLD (CAP  ≥ 248 db/m),0,100
-MASLD (CAP  ≥ 248 db/m),0,100
-Hepatic Advanced Fibrosis (LSM ≥ 8 kPa),0,100
-Sedentary Behavior quintil,0,100
-ALCOHOL,0,100
-Alcohol Intake,0,100
-Diabetes,0,100
-Hypertension,0,100
-ID,0,100
+RIAGENDR,0,100
+ridageyr_cat,0,100
+race_1,0,100
+race_2,0,100
+race_3,0,100
+nafld_288,0,100
+nafld_248,0,100
+nafld_302,0,100
+masld_288,0,100
+masld_302,0,100
+hepatic_fibrosis,0,100
+diabetes,0,100
+dysglycaemia_dm2,0,100
+cvd,0,100
+sb,0,100
+SEQN,0,100
 WTSAFPRP,0,100
-Age (yr),0,100
-Liver Stifness (Kpa),0,100
-Median CAP (dB/m),0,100
-Sedentary Behavior (h),0,100
-Education,1,99.96
-Smoking Habit,1,99.96
-Leisure-Time Physical Activity,1,99.96
-Walking or Bicycling for Transportation,3,99.89
-work-Related Activity,6,99.78
-MVPA,10,99.63
-MET (hours/week),10,99.63
-Overweight/obesity,15,99.44
-BMI (Kg/m2),22,99.18
-Waist Circumference (cm),58,97.84
-HbA1C (%),115,95.71
-Total Energy Intake (kcal/d),134,95.01
-HDL Baixo,172,93.59
-Total Cholesterol (mg/dL),172,93.59
-HDL-Cholesterol (mg/dL),172,93.59
-ALT (U/L),184,93.14
-GGT (U/L),184,93.14
-SBP (mmHg),193,92.81
-DBP (mmHg),193,92.81
-AST (U/L),193,92.81
-ALT/AST,193,92.81
-Hypertriglyceridemia,196,92.69
-Fasting Glucose (mg/dL),200,92.55
-HSI,211,92.14
-Fasting Triglycerides (mg/dL),241,91.02
-Insulin (µU/mL),250,90.68
-HOMA-IR,250,90.68
-LDL-Cholesterol (mg/dL),261,90.27
-FLI,303,88.71
-Poverty Income Ratio,336,87.48
-Protein Intake (g/d adj for kcal),815,69.62
-Carbohydrate Intake (g/d adj for kcal),815,69.62
-Sugar Intake (g/d adj for kcal),815,69.62
-Total Fat Intake (g/d) adj for kcal),815,69.62
-Saturated Fat Intake (g/d adj for kcal),815,69.62
-Unsaturated Fat Intake (g/d adj for kcal),815,69.62
+SDMVPSU,0,100
+SDMVSTRA,0,100
+RIDAGEYR,0,100
+LUXSMED,0,100
+LUXCAPM,0,100
+LBXGLU,0,100
+PAD680,0,100
+pad680_hours,0,100
+education,2,99.93
+masld_248,2,99.93
+smoking,2,99.93
+recreational_activity,2,99.93
+transportation_activity,5,99.84
+LBXGH,7,99.77
+work_activity,10,99.67
+mvpa_category,16,99.47
+mvpa,16,99.47
+pa_met,16,99.47
+overweight_obese,22,99.27
+BMXBMI,30,99.01
+hypertrigly,39,98.71
+low_hdl,39,98.71
+dyslipidemia,39,98.71
+LBXTC,48,98.42
+LBDHDD,48,98.42
+LBXTR,48,98.42
+LBXIN,62,97.96
+homair,62,97.96
+LBXSATSI,64,97.89
+LBXSGTSI,64,97.89
+LBDLDL,75,97.53
+LBXSASSI,77,97.46
+ast_alt,77,97.46
+BMXWAIST,81,97.33
+hsi,105,96.54
+alcohol_use,147,95.15
+fli,152,94.99
+htn,174,94.26
+kcal_mean_cat,220,92.75
+kcal_mean,220,92.75
+sbp,259,91.46
+dbp,259,91.46
+tprot_adj,302,90.05
+tcarb_adj,302,90.05
+tsugar_adj,302,90.05
+tfat_adj,302,90.05
+tsatfat_adj,302,90.05
+tunsatfat_adj,302,90.05
+indfmpir_cat,400,86.82
+INDFMPIR,400,86.82
+metabolic_syndrome,1103,63.65

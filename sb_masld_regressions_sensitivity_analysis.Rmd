@@ -1,0 +1,952 @@
+---
+title: "Association Between Sedentary Behavior and Metabolic Dysfunction-Associated Steatotic Liver Disease in U.S. Adults: A Cross-Sectional Analysis of NHANES 2017–2020"
+subtitle: "Sensitivity analysis"
+author: "Guilherme Ferreira"
+date: "2026-09-12 (YYYY-MM-DD)"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+## Overview
+
+This document is part of the Association Between Sedentary Behavior and Metabolic Dysfunction-Associated Steatotic Liver Disease in U.S. Adults: A Cross-Sectional Analysis of NHANES 2017–2020 analysis pipeline and is not intended to be executed independently. It relies on data, derived variables, and objects generated in previous stages of the pipeline.
+
+---
+
+### Variable Naming Convention
+
+* **UPPERCASE variables:** Retain their original NHANES variable names (with missing value codes converted to `NA` and skip patterns handled appropriately).
+* **lowercase variables:** Represent derived variables created during processing (e.g., `smoker`).
+
+---
+
+### Key Resources & Documentation
+
+* [NHANES Continuous Data Files (CDC)](https://wwwn.cdc.gov/nchs/nhanes/search/default.aspx)
+* [The Epidemiologist R Handbook](https://www.epirhandbook.com/en/)
+* [CDC NHANES R Tutorial Examples](https://wwwn.cdc.gov/nchs/data/tutorials/module3_examples_R.r)
+* [STC Library Reference](https://libstc.cc/#/stc/nid:6e7ka238xj6qcuyf7dkdkuyfo)
+* [R for Medical Public Health Data Analysis](https://bookdown.org/rwnahhas/RMPH/intro.html)
+
+
+# 1. Loading and Installing Required Packages
+```{r Download Packages}
+
+# Clear workspace
+rm(list = ls())
+
+# Define required packages
+required_packages <- c("survey", "tidyverse", "gtsummary", "gt", "here", "rio", "broom", "car", "conflicted")
+
+for (pkg in required_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+  }
+}
+
+# Load all packages silently
+suppressPackageStartupMessages({
+  invisible(lapply(required_packages, library, character.only = TRUE))
+})
+
+# Display current R version
+cat("R Version:", as.character(getRversion()), "\n")
+
+```
+
+```{r load-libraries, message=FALSE, warning=FALSE}
+
+# Load required libraries
+library(survey)
+library(tidyverse)
+library(gtsummary)
+library(gt)
+library(rio)
+library(here)
+library(broom)
+library(car)
+
+library(conflicted)
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
+
+# Display loaded package versions
+cat("R package versions:\n")
+for (p in required_packages) {
+  cat(p, ": ", as.character(packageVersion(p)), "\n")
+}
+
+# Configure survey package options
+# Specify how the survey package should handle strata containing only one
+# Primary Sampling Unit (PSU).
+
+options(survey.lonely.psu = "adjust")
+options(survey.adjust.domain.lonely = TRUE)
+```
+
+
+```{r loading-design-and-drop-unused-levels, message=FALSE, warning=FALSE}
+
+load("df_weighted.RData")
+
+# Remove níveis sem observações
+svy_design_subset$variables <- svy_design_subset$variables %>%
+  mutate(
+    alcohol_use = fct_drop(alcohol_use) 
+  )
+```
+
+2. Cutoff: 248 db/m
+```{r Initial-configurations, message=FALSE, warning=FALSE}
+
+# Define dependent variable
+dependent_variable <- "masld_248"
+
+descriptive_vars <- c(
+  
+  # Demographics
+  "RIDAGEYR", "RIAGENDR", "race_3", "education", "INDFMPIR",
+  
+  # Anthropometric
+  "BMXBMI", "BMXWAIST", "overweight_obese",
+  
+  # Blood pressure
+  "sbp", "dbp", "htn",
+  
+  # Lipids
+  "LBXTC", "LBDHDD", "LBDLDL", "LBXTR", "low_hdl", "dyslipidemia",
+  
+  # Glucose
+  "LBXGLU", "LBXGH", "dysglycaemia_dm2",
+  
+  # Lifestyle
+  "kcal_mean", "tsugar_adj", "tsatfat_adj", "smoking", "alcohol_use",
+  
+  # Physical activity
+  "mvpa_category", "PAD680", "pad680_hours",
+  
+  # Liver outcomes
+  "LUXCAPM", "LUXSMED", "masld_248", "hepatic_fibrosis"
+)
+
+# Define explanatory variables by removing the dependent variable 
+# and liver-related variables not included as explanatory variables
+explanatory_vars <- setdiff(
+  descriptive_vars,
+  c(dependent_variable, "hepatic_fibrosis", "LUXSMED", "LUXCAPM", "PAD680")
+)
+
+# Create a named vector with custom labels
+custom_labels <- list(
+  
+  # Demographic
+  RIDAGEYR = "Age (years)",
+  RIAGENDR = "Sex, Male",
+  race_3 = "Race/Ethnicity",
+  education = "educational level",
+  INDFMPIR = "Income-to-Poverty Ratio",
+  
+  # Anthropometric
+  BMXBMI = "BMI (kg/m²)",
+  BMXWAIST = "Waist circumference (cm)",
+  overweight_obese = "Overweight/Obesity",
+  
+  # Blood pressure
+  sbp = "SBP (mmHg)",
+  dbp = "DBP (mmHg)",
+  htn = "Hypertension",
+  
+  # Lipids
+  LBXTC = "Total cholesterol (mg/dL)",
+  LBDLDL = "LDL-C (mg/dL)",
+  LBDHDD = "HDL-C (mg/dL)",
+  LBXTR = "Triglycerides (mg/dL)",
+  low_hdl = "Low HDL-C",
+  dyslipidemia = "dyslipidemia",
+  
+  # Glucose
+  LBXGLU = "Fasting glucose (mg/dL)",
+  LBXGH = "HbA1c (%)",
+  dysglycaemia_dm2 = "Prediabetes/Diabetes",
+  
+  # Lifestyle
+  kcal_mean = "Total energy intake (kcal/day)",
+  tsugar_adj = "Sugar intake",
+  tsatfat_adj = "Saturated fat intake",
+  smoking = "smoking",
+  alcohol_use = "Alcohol use",
+  
+  # Physical activity
+  mvpa_category = "Physical activity (≥150 min/week)",
+  PAD680 = "Sedentary behavior (min/day)",
+  pad680_hours = "Sedentary behavior (hours/day)",
+  
+  # Liver outcomes
+  LUXCAPM = "CAP (dB/m)",
+  LUXSMED = "Liver stiffness (kPa)",
+  masld_248 = "MASLD",
+  hepatic_fibrosis = "Advanced liver fibrosis"
+  
+)
+
+```
+
+## 2. Cutoff: 248 - Regression Models
+
+### 2.1 Simple Regression Models
+
+```{r map-model-outliers, message=FALSE, warning=FALSE}
+
+# Map influential observations back to the survey design using DFBETAs
+
+adjust_without_outliers <- function(model, design, response, id_var, model_name) {
+  
+  # Validate model
+  if (is.null(model) || !inherits(model, "svyglm")) {
+    stop("Model must be a valid svyglm object")
+  }
+  
+  # Calculate weighted DFBETAs
+  inf <- influence(model)
+  dfbeta_vals <- inf$coefficients
+  # Matrix: rows = observations, columns = coefficients
+  
+  # Cutoff criterion: |DFBETA| > 2/sqrt(n)
+  n <- nrow(model.frame(model))
+  cutoff <- 2 / sqrt(n)
+  
+  # Identify influential observations for any coefficient
+  influential_cases <- which(
+    apply(abs(dfbeta_vals), 1, function(x) any(x > cutoff))
+  )
+  
+  # Plot DFBETAs for the main exposure
+  if ("PAD680" %in% colnames(dfbeta_vals)) {
+    plot(
+      dfbeta_vals[, "PAD680"],
+      type = "h",
+      main = paste("DFBETA - Model", model_name),
+      ylab = "DFBETA for Sedentary Behavior"
+    )
+    abline(h = c(-cutoff, cutoff), col = "red", lty = 2)
+  }
+  
+  # Obtain model variables
+  model_vars <- all.vars(formula(model))
+  
+  # Map IDs
+  model_data <- model.frame(model)
+  complete_survey_data <- design$variables[
+    complete.cases(design$variables[model_vars]),
+  ]
+  
+  # Obtain IDs of influential observations
+  if (length(influential_cases) > 0) {
+    outlier_ids <- complete_survey_data[[id_var]][influential_cases]
+  } else {
+    outlier_ids <- numeric(0)
+  }
+  
+  # Exclude influential observations and refit model
+  if (length(outlier_ids) > 0) {
+    keep_cases <- !(design$variables[[id_var]] %in% outlier_ids)
+    design_without_outliers <- design[keep_cases, ]
+  } else {
+    design_without_outliers <- design
+    message("No influential observations found; using original design")
+  }
+  
+  # Refit model without influential observations
+  if (length(outlier_ids) > 0) {
+    model_without_outlier <- svyglm(
+      formula = formula(model),
+      design = design_without_outliers,
+      family = model$family
+    )
+  } else {
+    model_without_outlier <- model
+  }
+  
+  # Print information
+  print(paste("=== MODEL", model_name, "==="))
+  print(paste("Observations in original model:", nrow(model_data)))
+  print(paste("Complete survey observations:", nrow(complete_survey_data)))
+  print(paste("Influential observations (DFBETA):", length(outlier_ids)))
+  
+  return(list(
+    model_without_outlier = model_without_outlier,
+    outliers = outlier_ids,
+    cutoff = cutoff,
+    influential_cases = influential_cases,
+    dfbeta_vals = dfbeta_vals
+  ))
+}
+```
+_Note:_ Outlier analysis was performed as a sensitivity analysis. DFBETA-based influence diagnostics are not fully validated for complex survey designs and should therefore not be interpreted as a formal outlier detection procedure for survey-weighted regression models. The results are used to assess the robustness of the primary estimates to potentially influential observations.
+
+```{r simple-sensitivity-analysis, message=FALSE, warning=FALSE}
+
+# ====================
+# Sensitivity analysis: simple regression
+# With and without influential observations
+# ====================
+
+# Simple regression model
+simple_model <- svyglm(
+  reformulate(
+    "pad680_hours",
+    dependent_variable
+  ),
+  design = svy_design_subset,
+  family = quasibinomial()
+)
+
+# Refit without influential observations
+simple_result <- adjust_without_outliers(
+  model = simple_model,
+  design = svy_design_subset,
+  response = dependent_variable,
+  id_var = "SEQN",
+  model_name = "Simple Regression"
+)
+
+# Results with influential observations
+simple_table <- tbl_regression(
+  simple_model,
+  exponentiate = TRUE,
+  conf.int = TRUE,
+  label = custom_labels
+) %>%
+  add_glance_table(include = nobs)
+
+# Results without influential observations
+simple_table_without_outliers <- tbl_regression(
+  simple_result$model_without_outlier,
+  exponentiate = TRUE,
+  conf.int = TRUE,
+  label = custom_labels
+) %>%
+  add_glance_table(include = nobs)
+
+# Display results
+simple_table
+simple_table_without_outliers
+```
+
+## 2.2 Cutoff: 248 - Multivariable Regression Models - Hierarchical Additive Approach
+
+```{r sensitivity-hierarchical-additive-regression-models, message=FALSE, warning=FALSE}
+
+# Sociodemographic confounders
+sensitivity_confounders_model_1 <- c(
+  "RIDAGEYR",
+  "RIAGENDR",
+  "race_3",
+  "education",
+  "INDFMPIR",
+  "smoking",
+  "alcohol_use",
+  "kcal_mean"
+)
+
+# Model 1 + physical activity
+sensitivity_confounders_model_2 <- c(
+  sensitivity_confounders_model_1,
+  "mvpa_category"
+)
+
+# Model 2 + metabolic mediators
+sensitivity_confounders_model_3 <- c(
+  sensitivity_confounders_model_2,
+  "overweight_obese",
+  "htn",
+  "dysglycaemia_dm2",
+  "dyslipidemia"
+)
+
+# Complete sensitivity models
+sensitivity_model_1_vars <- c(
+  "pad680_hours",
+  sensitivity_confounders_model_1
+)
+
+sensitivity_model_2_vars <- c(
+  "pad680_hours",
+  sensitivity_confounders_model_2
+)
+
+sensitivity_model_3_vars <- c(
+  "pad680_hours",
+  sensitivity_confounders_model_3
+)
+
+sensitivity_model_vars <- list(
+  sensitivity_model_1_vars,
+  sensitivity_model_2_vars,
+  sensitivity_model_3_vars
+)
+
+# ====================
+# ORIGINAL SENSITIVITY MODELS
+# ====================
+
+sensitivity_models <- list()
+
+for (i in seq_along(sensitivity_model_vars)) {
+  
+  formula <- reformulate(
+    termlabels = sensitivity_model_vars[[i]],
+    response = dependent_variable
+  )
+  
+  sensitivity_models[[i]] <- svyglm(
+    formula = formula,
+    design = svy_design_subset,
+    family = quasibinomial(link = "logit")
+  )
+}
+
+# Tables for original sensitivity models
+sensitivity_original_tables <- lapply(
+  seq_along(sensitivity_models),
+  function(i) {
+    
+    model <- sensitivity_models[[i]]
+    n_obs <- nrow(model$model)
+    
+    tbl_regression(
+      model,
+      exponentiate = TRUE,
+      conf.int = TRUE,
+      label = custom_labels
+    ) %>%
+      modify_caption(
+        paste0(
+          "**Sensitivity Model ", i,
+          " (N = ", n_obs, ")**"
+        )
+      )
+  }
+)
+
+# Display original sensitivity models
+tbl_merge(
+  tbls = sensitivity_original_tables,
+  tab_spanner = paste(
+    "Sensitivity Model",
+    seq_along(sensitivity_original_tables)
+  )
+)
+
+# ====================
+# SENSITIVITY MODELS WITHOUT INFLUENTIAL OBSERVATIONS
+# ====================
+
+sensitivity_models_without_outliers <- list()
+
+for (i in seq_along(sensitivity_models)) {
+  
+  cat("\n=== Processing Sensitivity Model", i, "===\n")
+  
+  sensitivity_models_without_outliers[[i]] <- adjust_without_outliers(
+    model = sensitivity_models[[i]],
+    design = svy_design_subset,
+    response = dependent_variable,
+    id_var = "SEQN",
+    model_name = paste0("Sensitivity_", i)
+  )
+}
+
+# Extract refitted models
+sensitivity_models_refit <- lapply(
+  sensitivity_models_without_outliers,
+  function(x) x$model_without_outlier
+)
+
+# Create tables for sensitivity models without influential observations
+sensitivity_tables_without_outliers <- lapply(
+  seq_along(sensitivity_models_refit),
+  function(i) {
+    
+    model <- sensitivity_models_refit[[i]]
+    n_obs <- nrow(model$model)
+    
+    tbl_regression(
+      model,
+      exponentiate = TRUE,
+      conf.int = TRUE,
+      label = custom_labels
+    ) %>%
+      modify_caption(
+        paste0(
+          "**Sensitivity Model ", i,
+          " Without Influential Observations (N = ",
+          n_obs,
+          ")**"
+        )
+      )
+  }
+)
+
+# Display sensitivity models without influential observations
+tbl_merge(
+  tbls = sensitivity_tables_without_outliers,
+  tab_spanner = paste(
+    "Sensitivity Model Without Influential Observations",
+    seq_along(sensitivity_tables_without_outliers)
+  )
+)
+
+# ====================
+# SIDE-BY-SIDE COMPARISON
+# ====================
+
+sensitivity_comparison_table <- tbl_merge(
+  tbls = c(
+    sensitivity_original_tables,
+    sensitivity_tables_without_outliers
+  ),
+  tab_spanner = c(
+    paste(
+      "Original Sensitivity Model",
+      seq_along(sensitivity_original_tables)
+    ),
+    paste(
+      "Sensitivity Model Without Influential Observations",
+      seq_along(sensitivity_tables_without_outliers)
+    )
+  )
+)
+
+sensitivity_comparison_table
+``` 
+
+```{r check-sensitivity-outliers, message=FALSE, warning=FALSE}
+
+# Summary of influential observations by sensitivity model
+sensitivity_outlier_summary <- data.frame(
+  Model = paste(
+    "Sensitivity Model",
+    1:length(sensitivity_models_without_outliers)
+  ),
+  N_Outliers = sapply(
+    sensitivity_models_without_outliers,
+    function(x) length(x$outliers)
+  ),
+  DFBETA_Cutoff = sapply(
+    sensitivity_models_without_outliers,
+    function(x) round(x$cutoff, 4)
+  )
+)
+
+print(sensitivity_outlier_summary)
+
+# Check which IDs were removed from each sensitivity model
+for (i in seq_along(sensitivity_models_without_outliers)) {
+  
+  cat("\n=== Sensitivity Model", i, "===\n")
+  
+  cat(
+    "Removed IDs:",
+    if (length(sensitivity_models_without_outliers[[i]]$outliers) > 0) {
+      head(
+        sensitivity_models_without_outliers[[i]]$outliers,
+        10
+      )
+    } else {
+      "None"
+    },
+    "\n"
+  )
+}
+```
+
+2. Cutoff: 302 db/m
+```{r Initial-configurations-2, message=FALSE, warning=FALSE}
+
+# Define dependent variable
+dependent_variable <- "masld_302"
+
+descriptive_vars <- c(
+  
+  # Demographics
+  "RIDAGEYR", "RIAGENDR", "race_3", "education", "INDFMPIR",
+  
+  # Anthropometric
+  "BMXBMI", "BMXWAIST", "overweight_obese",
+  
+  # Blood pressure
+  "sbp", "dbp", "htn",
+  
+  # Lipids
+  "LBXTC", "LBDHDD", "LBDLDL", "LBXTR", "low_hdl", "dyslipidemia",
+  
+  # Glucose
+  "LBXGLU", "LBXGH", "dysglycaemia_dm2",
+  
+  # Lifestyle
+  "kcal_mean", "tsugar_adj", "tsatfat_adj", "smoking", "alcohol_use",
+  
+  # Physical activity
+  "mvpa_category", "PAD680", "pad680_hours",
+  
+  # Liver outcomes
+  "LUXCAPM", "LUXSMED", "masld_302", "hepatic_fibrosis"
+)
+
+# Define explanatory variables by removing the dependent variable 
+# and liver-related variables not included as explanatory variables
+explanatory_vars <- setdiff(
+  descriptive_vars,
+  c(dependent_variable, "hepatic_fibrosis", "LUXSMED", "LUXCAPM", "PAD680")
+)
+
+# Create a named vector with custom labels
+custom_labels <- list(
+  
+  # Demographic
+  RIDAGEYR = "Age (years)",
+  RIAGENDR = "Sex, Male",
+  race_3 = "Race/Ethnicity",
+  education = "educational level",
+  INDFMPIR = "Income-to-Poverty Ratio",
+  
+  # Anthropometric
+  BMXBMI = "BMI (kg/m²)",
+  BMXWAIST = "Waist circumference (cm)",
+  overweight_obese = "Overweight/Obesity",
+  
+  # Blood pressure
+  sbp = "SBP (mmHg)",
+  dbp = "DBP (mmHg)",
+  htn = "Hypertension",
+  
+  # Lipids
+  LBXTC = "Total cholesterol (mg/dL)",
+  LBDLDL = "LDL-C (mg/dL)",
+  LBDHDD = "HDL-C (mg/dL)",
+  LBXTR = "Triglycerides (mg/dL)",
+  low_hdl = "Low HDL-C",
+  dyslipidemia = "dyslipidemia",
+  
+  # Glucose
+  LBXGLU = "Fasting glucose (mg/dL)",
+  LBXGH = "HbA1c (%)",
+  dysglycaemia_dm2 = "Prediabetes/Diabetes",
+  
+  # Lifestyle
+  kcal_mean = "Total energy intake (kcal/day)",
+  tsugar_adj = "Sugar intake",
+  tsatfat_adj = "Saturated fat intake",
+  smoking = "smoking",
+  alcohol_use = "Alcohol use",
+  
+  # Physical activity
+  mvpa_category = "Physical activity (≥150 min/week)",
+  PAD680 = "Sedentary behavior (min/day)",
+  pad680_hours = "Sedentary behavior (hours/day)",
+  
+  # Liver outcomes
+  LUXCAPM = "CAP (dB/m)",
+  LUXSMED = "Liver stiffness (kPa)",
+  masld_302 = "MASLD",
+  hepatic_fibrosis = "Advanced liver fibrosis"
+  
+)
+
+```
+
+## 3. Cutoff: 302 - Regression Models
+
+### 3.1 Simple Regression Models
+
+
+```{r simple-sensitivity-analysis-2, message=FALSE, warning=FALSE}
+
+# ====================
+# Sensitivity analysis: simple regression
+# With and without influential observations
+# ====================
+
+# Simple regression model
+simple_model <- svyglm(
+  reformulate(
+    "pad680_hours",
+    dependent_variable
+  ),
+  design = svy_design_subset,
+  family = quasibinomial()
+)
+
+# Refit without influential observations
+simple_result <- adjust_without_outliers(
+  model = simple_model,
+  design = svy_design_subset,
+  response = dependent_variable,
+  id_var = "SEQN",
+  model_name = "Simple Regression"
+)
+
+# Results with influential observations
+simple_table <- tbl_regression(
+  simple_model,
+  exponentiate = TRUE,
+  conf.int = TRUE,
+  label = custom_labels
+) %>%
+  add_glance_table(include = nobs)
+
+# Results without influential observations
+simple_table_without_outliers <- tbl_regression(
+  simple_result$model_without_outlier,
+  exponentiate = TRUE,
+  conf.int = TRUE,
+  label = custom_labels
+) %>%
+  add_glance_table(include = nobs)
+
+# Display results
+simple_table
+simple_table_without_outliers
+```
+
+## 3.2 Cutoff: 302 - Multivariable Regression Models - Hierarchical Additive Approach
+
+```{r sensitivity-hierarchical-additive-regression-models-2, message=FALSE, warning=FALSE}
+
+# Sociodemographic confounders
+sensitivity_confounders_model_1 <- c(
+  "RIDAGEYR",
+  "RIAGENDR",
+  "race_3",
+  "education",
+  "INDFMPIR",
+  "smoking",
+  "alcohol_use",
+  "kcal_mean"
+)
+
+# Model 1 + physical activity
+sensitivity_confounders_model_2 <- c(
+  sensitivity_confounders_model_1,
+  "mvpa_category"
+)
+
+# Model 2 + metabolic mediators
+sensitivity_confounders_model_3 <- c(
+  sensitivity_confounders_model_2,
+  "overweight_obese",
+  "htn",
+  "dysglycaemia_dm2",
+  "dyslipidemia"
+)
+
+# Complete sensitivity models
+sensitivity_model_1_vars <- c(
+  "pad680_hours",
+  sensitivity_confounders_model_1
+)
+
+sensitivity_model_2_vars <- c(
+  "pad680_hours",
+  sensitivity_confounders_model_2
+)
+
+sensitivity_model_3_vars <- c(
+  "pad680_hours",
+  sensitivity_confounders_model_3
+)
+
+sensitivity_model_vars <- list(
+  sensitivity_model_1_vars,
+  sensitivity_model_2_vars,
+  sensitivity_model_3_vars
+)
+
+# ====================
+# ORIGINAL SENSITIVITY MODELS
+# ====================
+
+sensitivity_models <- list()
+
+for (i in seq_along(sensitivity_model_vars)) {
+  
+  formula <- reformulate(
+    termlabels = sensitivity_model_vars[[i]],
+    response = dependent_variable
+  )
+  
+  sensitivity_models[[i]] <- svyglm(
+    formula = formula,
+    design = svy_design_subset,
+    family = quasibinomial(link = "logit")
+  )
+}
+
+# Tables for original sensitivity models
+sensitivity_original_tables <- lapply(
+  seq_along(sensitivity_models),
+  function(i) {
+    
+    model <- sensitivity_models[[i]]
+    n_obs <- nrow(model$model)
+    
+    tbl_regression(
+      model,
+      exponentiate = TRUE,
+      conf.int = TRUE,
+      label = custom_labels
+    ) %>%
+      modify_caption(
+        paste0(
+          "**Sensitivity Model ", i,
+          " (N = ", n_obs, ")**"
+        )
+      )
+  }
+)
+
+# Display original sensitivity models
+tbl_merge(
+  tbls = sensitivity_original_tables,
+  tab_spanner = paste(
+    "Sensitivity Model",
+    seq_along(sensitivity_original_tables)
+  )
+)
+
+# ====================
+# SENSITIVITY MODELS WITHOUT INFLUENTIAL OBSERVATIONS
+# ====================
+
+sensitivity_models_without_outliers <- list()
+
+for (i in seq_along(sensitivity_models)) {
+  
+  cat("\n=== Processing Sensitivity Model", i, "===\n")
+  
+  sensitivity_models_without_outliers[[i]] <- adjust_without_outliers(
+    model = sensitivity_models[[i]],
+    design = svy_design_subset,
+    response = dependent_variable,
+    id_var = "SEQN",
+    model_name = paste0("Sensitivity_", i)
+  )
+}
+
+# Extract refitted models
+sensitivity_models_refit <- lapply(
+  sensitivity_models_without_outliers,
+  function(x) x$model_without_outlier
+)
+
+# Create tables for sensitivity models without influential observations
+sensitivity_tables_without_outliers <- lapply(
+  seq_along(sensitivity_models_refit),
+  function(i) {
+    
+    model <- sensitivity_models_refit[[i]]
+    n_obs <- nrow(model$model)
+    
+    tbl_regression(
+      model,
+      exponentiate = TRUE,
+      conf.int = TRUE,
+      label = custom_labels
+    ) %>%
+      modify_caption(
+        paste0(
+          "**Sensitivity Model ", i,
+          " Without Influential Observations (N = ",
+          n_obs,
+          ")**"
+        )
+      )
+  }
+)
+
+# Display sensitivity models without influential observations
+tbl_merge(
+  tbls = sensitivity_tables_without_outliers,
+  tab_spanner = paste(
+    "Sensitivity Model Without Influential Observations",
+    seq_along(sensitivity_tables_without_outliers)
+  )
+)
+
+# ====================
+# SIDE-BY-SIDE COMPARISON
+# ====================
+
+sensitivity_comparison_table <- tbl_merge(
+  tbls = c(
+    sensitivity_original_tables,
+    sensitivity_tables_without_outliers
+  ),
+  tab_spanner = c(
+    paste(
+      "Original Sensitivity Model",
+      seq_along(sensitivity_original_tables)
+    ),
+    paste(
+      "Sensitivity Model Without Influential Observations",
+      seq_along(sensitivity_tables_without_outliers)
+    )
+  )
+)
+
+sensitivity_comparison_table
+``` 
+
+```{r check-sensitivity-outliers-2, message=FALSE, warning=FALSE}
+
+# Summary of influential observations by sensitivity model
+sensitivity_outlier_summary <- data.frame(
+  Model = paste(
+    "Sensitivity Model",
+    1:length(sensitivity_models_without_outliers)
+  ),
+  N_Outliers = sapply(
+    sensitivity_models_without_outliers,
+    function(x) length(x$outliers)
+  ),
+  DFBETA_Cutoff = sapply(
+    sensitivity_models_without_outliers,
+    function(x) round(x$cutoff, 4)
+  )
+)
+
+print(sensitivity_outlier_summary)
+
+# Check which IDs were removed from each sensitivity model
+for (i in seq_along(sensitivity_models_without_outliers)) {
+  
+  cat("\n=== Sensitivity Model", i, "===\n")
+  
+  cat(
+    "Removed IDs:",
+    if (length(sensitivity_models_without_outliers[[i]]$outliers) > 0) {
+      head(
+        sensitivity_models_without_outliers[[i]]$outliers,
+        10
+      )
+    } else {
+      "None"
+    },
+    "\n"
+  )
+}
+```
+
+

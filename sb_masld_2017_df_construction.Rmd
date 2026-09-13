@@ -1,0 +1,1584 @@
+---
+title: "Association Between Sedentary Behavior and Metabolic Dysfunction-Associated Steatotic Liver Disease in U.S. Adults: A Cross-Sectional Analysis of NHANES 2017–2020"
+subtitle: "Dataframe contruction"
+author: "Guilherme da Silva Ferreira"
+date: "2026-09-12 (YYYY-MM-DD)"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+## Overview
+
+This document was created in R using R Markdown. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown, visit <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button, a document will be generated that includes both narrative content and the output of any embedded R code chunks.
+
+---
+
+### Variable Naming Convention
+
+* **UPPERCASE variables:** Retain their original NHANES variable names (with missing value codes converted to `NA` and skip patterns handled appropriately).
+* **lowercase variables:** Represent derived variables created during processing (e.g., `smoker`).
+
+---
+
+### Key Resources & Documentation
+
+* [NHANES Continuous Data Files (CDC)](https://wwwn.cdc.gov/nchs/nhanes/search/default.aspx)
+* [The Epidemiologist R Handbook](https://www.epirhandbook.com/en/)
+* [CDC NHANES R Tutorial Examples](https://wwwn.cdc.gov/nchs/data/tutorials/module3_examples_R.r)
+* [STC Library Reference](https://libstc.cc/#/stc/nid:6e7ka238xj6qcuyf7dkdkuyfo)
+* [R for Medical Public Health Data Analysis](https://bookdown.org/rwnahhas/RMPH/intro.html)
+
+
+# 1. Loading and Installing Required Packages
+
+```{r setup-packages, message=FALSE, warning=FALSE}
+
+# Clear workspace
+rm(list = ls())
+
+
+# Define required packages
+required_packages <- c("survey", "tidyverse", "skimr","here","rio")
+
+# Install missing packages automatically
+for (pkg in required_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+  }
+}
+
+# Load all packages silently
+suppressPackageStartupMessages({
+  invisible(lapply(required_packages, library, character.only = TRUE))
+})
+
+# Display current R version
+cat("R Version:", as.character(getRversion()), "\n")
+
+```
+
+
+```{r load-libraries, message=FALSE, warning=FALSE}
+
+# Load required libraries
+library(survey)
+library(tidyverse)
+library(skimr)
+library(nortest)
+library(gt)
+library(rio)
+library(here)
+
+# Display loaded package versions
+cat("Loaded R Package Versions:\n")
+packages_to_check <- c("survey", "tidyverse", "skimr", "nortest", "gt", "rio", "here")
+
+for (pkg in packages_to_check) {
+  cat(pkg, ":", as.character(packageVersion(pkg)), "\n")
+}
+
+# Configure survey package parameters for single-PSU strata handling
+options(survey.lonely.psu = "adjust")
+options(survey.adjust.domain.lonely = TRUE)
+```
+# 2. Data Selection and Acquisition
+
+```{r function to download the required survey cycles for a component filer, message=FALSE, warning=FALSE}
+
+# Function to download the required survey cycles for a component file
+
+downloadNHANES <- function(file, yrs) {
+  print(file)
+  outdf <- data.frame(NULL)
+  
+  for (j in seq_along(file)) {
+    urlstring <- paste("wwwn.cdc.gov/Nchs/Data/Nhanes/Public/", yrs[j], "/DataFiles/", file[j], ".XPT", sep = "")
+    download.file(urlstring, tf <- tempfile(), mode = "wb")
+    tmpframe <- foreign::read.xport(tf)
+    outdf <- bind_rows(outdf, tmpframe)
+  }
+  return(outdf)
+}
+
+```
+
+```{r select-nhanes-table, message=FALSE, warning=FALSE}
+# Specify the survey cycles required using corresponding file prefixes
+# Target cycle: 2017–March 2020 Pre-pandemic Data (Prefix: P_)
+
+# Demographic data
+table_demo <- c("P_DEMO")
+
+# Examination data
+table_bpxo <- c("P_BPXO")
+table_bmx <- c("P_BMX")
+table_lux <- c("P_LUX")
+table_fastqx <- c("P_FASTQX")
+
+# Laboratory Data
+table_alb_cr <- c("P_ALB_CR")
+table_ucpreg <- c("P_UCPREG")
+table_hepa <- c("P_HEPA")
+table_hepb_s <- c("P_HEPB_S")
+table_hepbd <- c("P_HEPBD")
+table_hepc <- c("P_HEPC")
+table_tchol <- c("P_TCHOL")
+table_hdl <- c("P_HDL")
+table_glu <- c("P_GLU")
+table_ins <- c("P_INS")
+table_ghb <- c("P_GHB")
+table_trigly <- c("P_TRIGLY")
+table_biopro <- c("P_BIOPRO")
+
+# Questionnaire Data
+table_bpq <- c("P_BPQ")
+table_heq <- c("P_HEQ")
+table_paq <- c("P_PAQ")
+table_diq <- c("P_DIQ")
+table_smq <- c("P_SMQ")
+table_dbq <- c("P_DBQ")
+table_alq <- c("P_ALQ")
+table_mcq <- c("P_MCQ")
+
+# Dietary data
+table_dr1tot <- c("P_DR1TOT")
+table_dr2tot <- c("P_DR2TOT")
+
+# Prescription Medication Data
+table_rxq_rx <- c("P_RXQ_RX")
+table_rxq_drug <- c("RXQ_DRUG")
+
+
+```
+
+
+```{r download-nhanes-tables, message=FALSE, warning=FALSE}
+
+# Increase download timeout limit for large data files
+options(timeout = max(300, getOption("timeout")))
+
+# Define survey cycle year code for 2017-2020 pre-pandemic cycle
+yrs_2017 <- c("2017")
+
+# Download NHANES data tables
+DEMO   <- downloadNHANES(table_demo, yrs_2017)   # Demographics
+BPX    <- downloadNHANES(table_bpxo, yrs_2017)   # Blood Pressure (Oscillometric)
+BMX    <- downloadNHANES(table_bmx, yrs_2017)    # Body Measures (Anthropometry)
+LUX    <- downloadNHANES(table_lux, yrs_2017)    # Liver Ultrasound Transient Elastography
+ALB_CR <- downloadNHANES(table_alb_cr, yrs_2017) # Albumin & Creatinine (Urine)
+HEPBD  <- downloadNHANES(table_hepbd, yrs_2017)  # Hepatitis B Core, Surface Antigen, and Hepatitis D
+HEPC   <- downloadNHANES(table_hepc, yrs_2017)   # Hepatitis C
+TCHOL  <- downloadNHANES(table_tchol, yrs_2017)  # Total Cholesterol
+HDL    <- downloadNHANES(table_hdl, yrs_2017)    # HDL Cholesterol
+GLU    <- downloadNHANES(table_glu, yrs_2017)    # Fasting Glucose
+INS    <- downloadNHANES(table_ins, yrs_2017)    # Fasting Insulin
+GHB    <- downloadNHANES(table_ghb, yrs_2017)    # Glycated Hemoglobin (HbA1c)
+TRIGLY <- downloadNHANES(table_trigly, yrs_2017) # Triglycerides
+BPQ    <- downloadNHANES(table_bpq, yrs_2017)    # Hypertension Questionnaire
+HEQ    <- downloadNHANES(table_heq, yrs_2017)    # Hepatitis Questionnaire
+PAQ    <- downloadNHANES(table_paq, yrs_2017)    # Physical Activity & Sedentary Behavior
+DIQ    <- downloadNHANES(table_diq, yrs_2017)    # diabetes Questionnaire
+SMQ    <- downloadNHANES(table_smq, yrs_2017)    # Smoking Questionnaire
+BIOPRO <- downloadNHANES(table_biopro, yrs_2017) # Standard Biochemistry Profile
+RXQ_RX <- downloadNHANES(table_rxq_rx, yrs_2017) # Prescription Medications
+DBQ    <- downloadNHANES(table_dbq, yrs_2017)    # Diet Behavior Questionnaire
+ALQ    <- downloadNHANES(table_alq, yrs_2017)    # Alcohol Use Questionnaire
+MCQ    <- downloadNHANES(table_mcq, yrs_2017)    # Medical Conditions Questionnaire
+DR1TOT <- downloadNHANES(table_dr1tot, yrs_2017) # 24-Hour Dietary Recall (Day 1)
+DR2TOT <- downloadNHANES(table_dr2tot, yrs_2017) # 24-Hour Dietary Recall (Day 2)
+
+# Download drug dictionary reference table (1988 cycle reference)
+yrs_1988 <- c("1988")
+RXQ_DRUG <- downloadNHANES(table_rxq_drug, yrs_1988) # Drug Code Information Reference
+
+```
+
+```{r merge-tables-and-select-variables, message=FALSE, warning=FALSE}
+
+# Merge NHANES tables and select relevant analytical variables
+df_temp <- DEMO %>%
+  select(
+    SEQN, SDDSRVYR, SDMVPSU, SDMVSTRA, RIAGENDR, RIDAGEYR, 
+    RIDRETH1, RIDRETH3, DMDEDUC2, RIDEXPRG, INDFMPIR
+  ) %>%
+  left_join(select(BPX, SEQN, BPXODI1, BPXODI2, BPXODI3, BPXOSY1, BPXOSY2, BPXOSY3), by = "SEQN") %>%
+  left_join(select(BMX, SEQN, BMXBMI, BMXWAIST), by = "SEQN") %>%
+  left_join(select(LUX, SEQN, LUAXSTAT, LUAPNME, LUXSMED, LUXSIQR, LUXSIQRM, LUXCAPM, LUXCPIQR), by = "SEQN") %>%
+  left_join(select(ALB_CR, SEQN, URDACT), by = "SEQN") %>%
+  left_join(select(HEPBD, SEQN, LBDHBG), by = "SEQN") %>%
+  left_join(select(HEPC, SEQN, LBXHCR), by = "SEQN") %>%
+  left_join(select(TCHOL, SEQN, LBXTC), by = "SEQN") %>%
+  left_join(select(HDL, SEQN, LBDHDD), by = "SEQN") %>%
+  left_join(select(TRIGLY, SEQN, WTSAFPRP, LBDLDL, LBXTR), by = "SEQN") %>%
+  left_join(select(GLU, SEQN, LBXGLU), by = "SEQN") %>%
+  left_join(select(INS, SEQN, LBXIN), by = "SEQN") %>%
+  left_join(select(GHB, SEQN, LBXGH), by = "SEQN") %>%
+  left_join(select(BPQ, SEQN, BPQ020, BPQ080), by = "SEQN") %>%
+  left_join(select(SMQ, SEQN, SMQ020, SMQ040, SMQ050Q, SMQ050U), by = "SEQN") %>%
+  left_join(select(BIOPRO, SEQN, LBXSATSI, LBXSASSI, LBXSGTSI), by = "SEQN") %>%
+  left_join(
+    select(
+      PAQ, SEQN, PAQ605, PAQ610, PAD615, PAQ620, PAQ625, PAD630, PAQ635, 
+      PAQ640, PAD645, PAQ650, PAQ655, PAD660, PAQ665, PAQ670, PAD675, PAD680
+    ), 
+    by = "SEQN"
+  ) %>%
+  left_join(select(DIQ, SEQN, DIQ010), by = "SEQN") %>%
+  left_join(select(ALQ, SEQN, ALQ111, ALQ121, ALQ130, ALQ142), by = "SEQN") %>%
+  left_join(
+    select(
+      DR1TOT, SEQN, DR1DRSTZ, DRDINT, DRQSDIET, DR1TKCAL, DR1TPROT, 
+      DR1TCARB, DR1TSUGR, DR1TTFAT, DR1TSFAT, DR1TMFAT, DR1TPFAT
+    ), 
+    by = "SEQN"
+  ) %>%
+  left_join(
+    select(
+      DR2TOT, SEQN, DR2DRSTZ, DR2TKCAL, DR2TPROT, DR2TCARB, 
+      DR2TSUGR, DR2TTFAT, DR2TSFAT, DR2TMFAT, DR2TPFAT
+    ), 
+    by = "SEQN"
+  ) %>%
+  left_join(select(MCQ, SEQN, MCQ160B, MCQ160C, MCQ160D, MCQ160E, MCQ160F), by = "SEQN")
+
+```
+
+```{r inspect-dataset-structure, message=FALSE, warning=FALSE}
+
+# Display dataset dimensions (rows and columns)
+dim(df_temp)
+
+# Inspect dataset structure and variable data types
+glimpse(df_temp)
+```
+
+# 3. Data Cleaning and Preprocessing
+
+```{r adjust-variable-types, message=FALSE, warning=FALSE}
+
+# Specify and adjust variable data types
+df_temp <- df_temp %>%
+  mutate(across(
+    c(
+      SEQN, SDDSRVYR, RIDAGEYR, BPXODI1, BPXODI2, BPXODI3, 
+      BPXOSY1, BPXOSY2, BPXOSY3, LBXTC, LBDHDD, LBXGLU, SMQ050Q
+    ), 
+    as.integer
+  )) %>%
+  mutate(across(
+    c(
+      RIAGENDR, RIDRETH1, DMDEDUC2, RIDEXPRG, LUAXSTAT, LUAPNME, 
+      LBDHBG, LBXHCR, BPQ020, BPQ080, SMQ020, SMQ040, SMQ050U, 
+      ALQ111, ALQ121, DR1DRSTZ, DRDINT
+    ), 
+    as.factor
+  ))
+
+
+# Recode demographic variables and education levels
+
+# Race/Ethnicity Recoding (Option 1)
+df_temp$race_1 <- recode_factor(
+  as.factor(df_temp$RIDRETH1),
+  "1" = 1,
+  "2" = 1,
+  "3" = 3,
+  "4" = 4,
+  "5" = 5
+)
+
+# Race/Ethnicity Recoding (Option 2)
+df_temp$race_2 <- recode_factor(
+  as.factor(df_temp$RIDRETH3),
+  "1" = 1,
+  "2" = 1,
+  "3" = 3,
+  "4" = 4,
+  "6" = 6,
+  "7" = 7
+)
+
+# Race/Ethnicity Recoding (Option 3)
+df_temp$race_3 <- recode_factor(
+  as.factor(df_temp$RIDRETH1),
+  "1" = 1,
+  "2" = 1,
+  "3" = 3,
+  "4" = 1,
+  "5" = 1
+)
+
+df_temp$race_3 <- relevel(df_temp$race_3,
+                          ref = "3")
+# Education Level Categorization
+df_temp$education <- recode_factor(df_temp$DMDEDUC2,
+  "1" = "1",            # Less than 9th grade
+  "2" = "1",            # 9–11th grade
+  "3" = "1",            # High school grad/GED
+  "4" = "3",            # Some college/AA
+  "5" = "3",            # College graduate or above
+  "7" = NA_character_,  # Refused
+  "9" = NA_character_   # Don't know
+)
+
+```
+### Methodological Notes on Selected Variables
+
+**Income-to-Poverty Ratio (`INDFMPIR`)**
+* The PIR value was not computed if the respondent only reported total family income as a broad range (e.g., `< $20,000` or `≥ $20,000`).
+* There are **2,201 missing values** (`NA`) in the overall merged dataset for this variable.
+
+**Pregnancy Status (`RIDEXPRG`)**
+* Pregnancy status at the time of the mobile examination center (MEC) health examination was ascertained for females aged 8–59 years.
+* **Disclosure Protection:** Due to disclosure risk mitigation, pregnancy status is **only publicly released for women aged 20–44 years**.
+* **Coding Logic:**
+  * Self-reported pregnant at exam $\rightarrow$ Coded as **`1` (Pregnant)**.
+  * Self-reported "No" or "Don't know" with a **positive urine pregnancy test** $\rightarrow$ Coded as **`1` (Pregnant)**.
+  * Self-reported "No" with a **negative urine pregnancy test** $\rightarrow$ Coded as **`2` (Not Pregnant)**.
+  * Self-reported "Don't know" with a **negative urine test**, OR interviewed but not examined $\rightarrow$ Coded as **`3` (Could not be determined)**.
+* **Sample Distribution:** The proportion of pregnant females aged 8–19 or 45–59 years represents less than 1% of the NHANES 2017–March 2020 pre-pandemic sample.
+
+**Vibration-Controlled Transient Elastography Protocol (`LUX`)**
+* **Target Sample:** Eligible participants aged 12 years and older in the NHANES 2017–March 2020 cycle.
+* **Exclusion Criteria:** Inability to lie supine, pregnancy (or unknown pregnancy status), presence of an implanted electronic medical device, or lesions/bandages at the abdominal measurement site.
+* **Quality Control (QC):** Exams were conducted by trained health technicians using FibroScan® (Echosens™). A complete, high-quality exam requires a minimum 3-hour fast, $\ge 10$ valid liver stiffness measures (E), and an interquartile range-to-median ratio ($\text{IQR/M}$) $< 30\%$.
+* **Exam Status Categorization (`LUAXSTAT`):**
+  * `1` = Complete exam (Fasting $\ge 3$ hours, $\ge 10$ valid stiffness measures, $\text{IQR/M} < 30\%$).
+  * `2` = Partial exam (Fasting $< 3$ hours, $< 10$ measures, or $\text{IQR/M} \ge 30\%$).
+  * `3` = Ineligible participant.
+  * `4` = Not done (Refusal, time constraints, or technical failure).
+
+> *Note:* Participant exclusions based on elastography completeness (`LUAXSTAT == 1`) are applied in the subsequent analytic sample selection stage.
+
+
+```{r clean-missing-and-invalid-responses, message=FALSE, warning=FALSE}
+
+# Clean laboratory, physical activity, dietary, and questionnaire data
+
+df_temp <- df_temp %>%
+  
+# Exclusion of laboratory data for individuals without adequate fasting or without a blood sample
+  
+  # Handle inadequate fasting or missing blood samples (WTSAFPRP == 0)
+  # Set inadequate fasting-dependent biomarkers (Triglycerides, LDL, Glucose, Insulin) to NA
+  
+  mutate(
+    LBXTR  = ifelse(WTSAFPRP == 0, NA, LBXTR),
+    LBDLDL = ifelse(WTSAFPRP == 0, NA, LBDLDL),
+    LBXGLU = ifelse(WTSAFPRP == 0, NA, LBXGLU),
+    LBXIN  = ifelse(WTSAFPRP == 0, NA, LBXIN)
+  ) %>%
+  
+  #  # Recode refusal (7/77/7777) and "don't know" (9/99/9999) responses to NA in Physical Activity (PAQ)
+  mutate(
+    PAQ605 = ifelse(PAQ605 %in% c(7, 9), NA, PAQ605),
+    PAQ610 = ifelse(PAQ610 %in% c(77, 99), NA, PAQ610),
+    PAD615 = ifelse(PAD615 %in% c(7777, 9999), NA, PAD615),
+    PAQ620 = ifelse(PAQ620 %in% c(7, 9), NA, PAQ620),
+    PAQ625 = ifelse(PAQ625 %in% c(77, 99), NA, PAQ625),
+    PAQ640 = ifelse(PAQ640 %in% c(77, 99), NA, PAQ640),
+    PAD630 = ifelse(PAD630 %in% c(7777, 9999), NA, PAD630),
+    PAD645 = ifelse(PAD645 %in% c(7777, 9999), NA, PAD645),
+    PAQ655 = ifelse(PAQ655 %in% c(77, 99), NA, PAQ655),
+    PAD660 = ifelse(PAD660 %in% c(7777, 9999), NA, PAD660),
+    PAQ670 = ifelse(PAQ670 %in% c(77, 99), NA, PAQ670),
+    PAD675 = ifelse(PAD675 %in% c(7777, 9999), NA, PAD675)
+  ) %>%
+  
+  # Recode invalid responses for sedentary time (PAD680)
+  mutate(
+    PAD680 = ifelse(PAD680 %in% c(7777, 9999), NA, PAD680)
+  ) %>%
+  
+  # Recode invalid responses for smoking status (SMQ020)
+  mutate(
+    SMQ020 = ifelse(SMQ020 %in% c(7, 9), NA, SMQ020)
+  ) %>%
+  
+  # Clean dietary macronutrient data based on data reliability status and plausible daily caloric intake
+  
+  ## Day 1 Dietary Recall Cleaning (500–3500 kcal/day cutoffs)
+  mutate(across(
+    c(DR1TPROT, DR1TCARB, DR1TSUGR, DR1TTFAT, DR1TSFAT, DR1TMFAT, DR1TPFAT),
+    ~ ifelse(DR1DRSTZ != 1 | DR1TKCAL < 500 | DR1TKCAL > 3500, NA, .)
+  )) %>%
+  
+  ## Day 2 Dietary Recall Cleaning (500–3500 kcal/day cutoffs)
+  mutate(across(
+    c(DR2TPROT, DR2TCARB, DR2TSUGR, DR2TTFAT, DR2TSFAT, DR2TMFAT, DR2TPFAT),
+    ~ ifelse(DR2DRSTZ != 1 | DR2TKCAL < 500 | DR2TKCAL > 3500, NA, .)
+  )) %>%
+
+ # Recode self-reported diabetes diagnosis (DIQ010)
+  
+  mutate(
+    DIQ010 = ifelse(DIQ010 %in% c(7, 9), NA, DIQ010),
+    
+ # Recode refusal/don't know to NA; recode "Borderline/Pre-diabetes" (3) to "No" (2)
+    DIQ010 = ifelse(DIQ010 == 3, 2, DIQ010)
+    ) %>%
+
+ # Recode invalid responses for hypertension diagnosis (BPQ020)
+  mutate(
+    BPQ020 = ifelse(BPQ020 %in% c(7, 9), NA, BPQ020)
+    ) %>%
+ 
+ # Recode invalid responses for alcohol consumption questionnaire (ALQ)
+  mutate(
+  ALQ111 = ifelse(ALQ111 %in% c(7, 9), NA, ALQ111),
+  ALQ121 = ifelse(ALQ121 %in% c(77, 99), NA, ALQ121),
+  ALQ130 = ifelse(ALQ130 %in% c(777, 999), NA, ALQ130),
+  ALQ142 = ifelse(ALQ142 %in% c(77, 99), NA, ALQ142),
+) 
+
+```
+
+### Data Quality Standards and Processing Notes
+
+**Body Measures (`P_BMX`)**
+* Body measurement records were systematically reviewed by NCHS/CDC against NHANES historical standards (1999–2016). Values above the 99th percentile or below the 1st percentile for age- and gender-specific groups were flagged, and unrealistic values were removed from the official release. No data imputation was performed by NHANES.
+
+**Laboratory Quality Control & Fasting Subsample (`P_GLU`, `P_INS`, `P_TRIGLY`, `P_BIOPRO`)**
+* **Laboratory Data Validation:** Laboratory specimens were reviewed for analytical errors, with incomplete or improbable measures returned to the performing laboratory for confirmation.
+* **Fasting Subsample Reweighting:** Fasting measures (`P_GLU`, `P_INS`, `P_TRIGLY`) were assessed strictly in participants aged 12 years and older who met the 8 to <24 hour fasting requirement. Participants with inadequate fasting or missing blood specimens ($n = 346$) were assigned a subsample weight of `0` (`WTSAFPRP = 0`), requiring appropriate subsample survey weights (`WTSAFPRP`) for all population-based estimates.
+* **Biochemistry Panel Precaution (`P_BIOPRO`):** Per NHANES analytical guidelines, glucose, total cholesterol, and triglyceride measurements from the general biochemistry profile (`P_BIOPRO`) were excluded in favor of the dedicated laboratory files (`P_GLU`, `TCHOL`, and `P_TRIGLY`).
+
+**Questionnaires & Behavioral Modules (`P_BPQ`, `P_DIQ`, `P_SMQ`, `P_PAQ`, `P_ALQ`)**
+* Data collection quality was maintained via audio-recorded interview reviews, skip-pattern verification, and logical range checks by NCHS supervisors.
+* **Missing Data Standardization:** Questionnaire responses corresponding to "Refused" (codes ending in `7`/`77`) or "Don't know" (codes ending in `9`/`99`) were recoded to missing (`NA`).
+* **Medical Conditions Handling:** Unanswered or non-specific response codes for self-reported hypertension (`BPQ`) and diabetes (`DIQ`) were verified against objective laboratory data where applicable.
+
+**Viral Hepatitis Assessment (`P_HEPBD`, `P_HEPC`, `P_HEQ`)**
+* Laboratory biomarkers were prioritized over self-reported hepatitis questionnaire data (`P_HEQ`) to eliminate recall bias.
+* Serum Hepatitis B Surface Antigen (`LBDHBG` / HBsAg) and Hepatitis C Virus RNA (`LBDHCI` / HCV RNA) laboratory results were utilized to identify active viral infections.
+
+---
+
+### Analytic Eligibility and Sample Inclusion Criteria
+
+Aligned with established epidemiological frameworks for MASLD research in NHANES (e.g., *PMC10662062*), participants were considered eligible for inclusion based on the following criteria:
+
+1. **Inclusion Criteria:**
+   * Adult participants aged $\ge 18$ years.
+   * Complete and valid Vibration-Controlled Transient Elastography (VCTE) exam (`LUAXSTAT == 1`):
+     * Fasting time $\ge 3$ hours.
+     * $\ge 10$ valid liver stiffness ($E$) measurements.
+     * Liver stiffness Interquartile Range to Median ratio ($\text{IQR/M}$) $< 30\%$.
+   * Complete Body Mass Index (BMI) data.
+
+2. **Exclusion Criteria:**
+   * Missing or incomplete covariate/exam data.
+   * Active Hepatitis B (positive HBsAg) or active Hepatitis C (positive HCV RNA).
+   * Heavy alcohol consumption ($> 2$ drinks/day for men; $> 1$ drink/day for women).
+   * Exposure to known steatogenic medications (e.g., amiodarone, methotrexate, tamoxifen, glucocorticoids, valproic acid).
+
+## 3.1 Construction of Derived Variables
+
+```{r Construction of Derived Variables, message=FALSE, warning=FALSE}
+
+# ==============================================================================
+# SECTION 1: MEDICATION EXPOSURE DATA EXTRACTION
+# ==============================================================================
+
+# 1.1 Antihyperlipidemic Agents
+
+antihyperlipidemic_agents <- RXQ_DRUG %>%
+  filter(RXDDCN1B == "ANTIHYPERLIPIDEMIC AGENTS") %>%
+  distinct(RXDDRUG) %>%
+  arrange(RXDDRUG)
+
+# 1.2 Drug-Induced Liver Steatosis / NAFLD Agents
+# Combines "Adrenal Cortical Steroids" class with specific steatogenic compounds
+
+nafld_extra_pattern <- "(amiodarone|methotrexate|tamoxifen|valproic acid)"
+
+nafld_induced_agents <- RXQ_DRUG %>%
+  filter(
+    RXDDCN1B == "ADRENAL CORTICAL STEROIDS" |
+    grepl(nafld_extra_pattern, RXDDRUG, ignore.case = TRUE)
+  ) %>%
+  distinct(RXDDRUG) %>%
+  arrange(RXDDRUG)
+
+# 1.3 Antihypertensive Agents
+
+antihypertensive_classes <- c(
+  "ANTIHYPERTENSIVE COMBINATIONS",
+  "ANGIOTENSIN CONVERTING ENZYME (ACE) INHIBITORS",
+  "ANGIOTENSIN II INHIBITORS",
+  "ANGIOTENSIN RECEPTOR BLOCKERS AND NEPRILYSIN INHIBITORS",
+  "ANTIADRENERGIC AGENTS, CENTRALLY ACTING",
+  "BETA-ADRENERGIC BLOCKING AGENTS",
+  "CALCIUM CHANNEL BLOCKING AGENTS",
+  "DIURETICS",
+  "PERIPHERAL VASODILATORS",
+  "VASODILATORS"
+)
+
+antihypertensive_agent <- RXQ_DRUG %>%
+  filter(RXDDCN1B %in% antihypertensive_classes) %>%
+  distinct(RXDDRUG) %>%
+  arrange(RXDDRUG)
+
+# 1.4 Summarize Medication Use Flags per Participant (SEQN)
+
+    medication_flags <- RXQ_RX %>%
+      mutate(
+        lipid_lowering_agents_flag   = grepl(paste(antihyperlipidemic_agents$RXDDRUG, collapse = "|"), RXDDRUG, ignore.case = TRUE),
+        nafld_induced_agents_flag    = grepl(paste(nafld_induced_agents$RXDDRUG, collapse = "|"), RXDDRUG, ignore.case = TRUE),
+        antihypertensive_agent_flag = grepl(paste(antihypertensive_agent$RXDDRUG, collapse = "|"), RXDDRUG, ignore.case = TRUE)
+        ) %>%
+      group_by(SEQN) %>%
+      summarise(
+        lipid_lowering_agents        = any(lipid_lowering_agents_flag),
+        nafld_induced_agents         = any(nafld_induced_agents_flag),
+        antihypertensive_agent = any(antihypertensive_agent_flag),
+        .groups = "drop"
+        )
+
+df_temp <- df_temp %>%
+  left_join(medication_flags, by = "SEQN")
+
+# ==============================================================================
+# SECTION 2: DERIVATION OF CLINICAL AND CARDIOMETABOLIC VARIABLES
+# ==============================================================================
+
+df_temp <- df_temp %>%
+  
+  mutate(
+    
+  # ----------------------------------------------------------------------------
+  # 2.1 Blood Pressure Averages
+  # ----------------------------------------------------------------------------
+    sbp = rowMeans(select(., BPXOSY1, BPXOSY2, BPXOSY3), na.rm = TRUE),
+    sbp = ifelse(is.nan(sbp), NA_real_, sbp),
+    
+    dbp = rowMeans(select(., BPXODI1, BPXODI2, BPXODI3), na.rm = TRUE),
+    dbp = ifelse(is.nan(dbp), NA_real_, dbp)
+    ) %>%
+
+    
+  mutate(
+    
+    # --------------------------------------------------------------------------
+    # 2.2 Overweight / Obesity & Central Adiposity Classification
+    # Applies ethnic-specific cutoffs (Asian vs. Non-Asian populations)
+    # --------------------------------------------------------------------------
+    
+    overweight_obese = as.factor(case_when(
+      is.na(race_2) ~ NA,
+      is.na(BMXBMI) & is.na(BMXWAIST) ~ NA,
+      
+      # Asian background cutoff
+      
+      (race_2 == 6 & BMXBMI >= 23) |
+        (race_2 == 6 & RIAGENDR == 1 & BMXWAIST >= 90) |
+        (race_2 == 6 & RIAGENDR == 2 & BMXWAIST >= 80) ~ 1,
+      
+      # Non-Asian background cutoff
+      
+      (race_2 != 6 & BMXBMI >= 25) |
+        (race_2 != 6 & RIAGENDR == 1 & BMXWAIST >= 94) |
+        (race_2 != 6 & RIAGENDR == 2 & BMXWAIST >= 80) ~ 1,
+      TRUE ~ 0
+      
+      )),
+    
+    # --------------------------------------------------------------------------
+    # 2.3 Lipid Profile & dyslipidemia Definitions
+    # --------------------------------------------------------------------------
+    
+    hypertrigly = as.factor(case_when(
+      lipid_lowering_agents == TRUE ~ 1,
+      LBXTR >= 150 ~ 1,
+      is.na(LBXTR) ~ NA,
+      TRUE ~ 0)),
+    
+    low_hdl = as.factor(case_when(
+      lipid_lowering_agents == TRUE ~ 1,
+      RIAGENDR == 1 & LBDHDD < 40 ~ 1,
+      RIAGENDR == 2 & LBDHDD < 50 ~ 1,
+      is.na(LBDHDD) ~ NA,
+      TRUE ~ 0
+      )),
+
+    high_tc = as.factor(case_when(
+      lipid_lowering_agents == TRUE ~ 1,
+      LBXTC >= 200 ~ 1,
+      is.na(LBXTC) ~ NA,
+      TRUE ~ 0
+    )),
+    
+    high_ldl = as.factor(case_when(
+      lipid_lowering_agents == TRUE ~ 1,
+      LBDLDL >= 130 ~ 1,
+      is.na(LBDLDL) ~ NA,
+      TRUE ~ 0
+    )),
+    
+    dyslipidemia = as.factor(case_when(
+      is.na(high_tc) & is.na(high_ldl) & is.na(low_hdl) & is.na(hypertrigly) ~ NA,
+      high_tc == 1 | high_ldl == 1 | low_hdl == 1 | hypertrigly == 1 ~ 1,
+      TRUE ~ 0
+      )),
+
+    # --------------------------------------------------------------------------
+    # 2.4 Dysglycaemia & diabetes Classifications
+    # --------------------------------------------------------------------------
+    
+    diabetes = as.factor(case_when(
+      rowSums(select(., c(DIQ010, LBXGH, LBXGLU)) %>% is.na()) == 3 ~ NA,
+      !is.na(DIQ010) & DIQ010 == 1 ~ 1,
+      !is.na(LBXGH) & LBXGH >= 6.5 ~ 1,
+      !is.na(LBXGLU) & LBXGLU >= 126 ~ 1,
+      TRUE ~ 0
+    )),
+
+    dysglycaemia_dm2 = as.factor(case_when(
+          rowSums(select(., c(DIQ010, LBXGH, LBXGLU)) %>% is.na()) == 3 ~ NA,
+          !is.na(DIQ010) & DIQ010 == 1 ~ 1,
+          !is.na(LBXGH) & LBXGH >= 5.7 ~ 1,
+          !is.na(LBXGLU) & LBXGLU >= 100 ~ 1,
+          TRUE ~ 0
+    )),
+    
+
+    # --------------------------------------------------------------------------
+    # 2.5 Hypertension & Metabolic Syndrome
+    # --------------------------------------------------------------------------
+
+
+    htn = as.factor(case_when(
+      antihypertensive_agent == TRUE ~ 1,
+      (!is.na(sbp) & sbp >= 130) | (!is.na(dbp) & dbp >= 80) ~ 1,
+      is.na(sbp) | is.na(dbp) ~ NA,
+      TRUE ~ 0
+      
+      )),
+
+    metabolic_syndrome = as.factor(case_when(
+      rowSums(cbind(
+        as.numeric(as.character(overweight_obese)),
+        as.numeric(as.character(hypertrigly)),
+        as.numeric(as.character(low_hdl)),
+        as.numeric(as.character(htn)),
+        as.numeric(as.character(dysglycaemia_dm2))
+        ), na.rm = TRUE) >= 3 ~ 1,
+      
+      rowSums(cbind(
+        as.numeric(as.character(overweight_obese)),
+        as.numeric(as.character(hypertrigly)),
+        as.numeric(as.character(low_hdl)),
+        as.numeric(as.character(htn)),
+        as.numeric(as.character(dysglycaemia_dm2))
+        ), na.rm = TRUE) == 0 &
+        
+        rowSums(is.na(cbind(
+          overweight_obese,
+          hypertrigly,
+          low_hdl,
+          htn,
+          dysglycaemia_dm2
+          ))) == 0 ~ 0,
+      
+      TRUE ~ NA_real_
+      )),
+    
+
+    # --------------------------------------------------------------------------
+    # 2.6 Physical Activity & Sedentary Behavior
+    # --------------------------------------------------------------------------
+
+    
+    # Weekly Vigorous Physical Activity (min/week)
+    vigorous_pa = 
+      ifelse(PAQ605 == 1, (PAQ610 * PAD615), 0) + 
+      ifelse(PAQ650 == 1, (PAQ655 * PAD660), 0),
+    
+    # Weekly Moderate Physical Activity (min/week)   
+    moderate_pa = 
+      ifelse(PAQ620 == 1, (PAQ625 * PAD630), 0) +
+      ifelse(PAQ635 == 1, (PAQ640 * PAD645), 0) +
+      ifelse(PAQ665 == 1, (PAQ670 * PAD675), 0),
+    
+    mvpa = (vigorous_pa * 2) + moderate_pa,  # Moderate-to-vigorous physical activity
+    pa_met = (vigorous_pa * 8) + (moderate_pa * 4),  # Total MET-minutes/week
+
+    work_activity = 
+      ifelse(PAQ605 == 1, (PAQ610 * PAD615), 0) +
+      ifelse(PAQ620 == 1, (PAQ625 * PAD630), 0),
+     
+    transportation_activity = 
+      ifelse(PAQ635 == 1, (PAQ640 * PAD645), 0),
+
+    recreational_activity =
+      ifelse(PAQ650 == 1, (PAQ655 * PAD660), 0) +
+      ifelse(PAQ665 == 1, (PAQ670 * PAD675), 0),
+
+    mvpa_category = factor(case_when(
+          mvpa >= 150 ~ "≥150 min/week",
+          mvpa < 150  ~ "<150 min/week",
+          TRUE        ~ NA_character_
+        ),
+        levels = c("<150 min/week", "≥150 min/week") # Level ordering
+        ),
+
+   pad680_hours = PAD680/60,  # Sedentary time converted to hours
+
+   # --------------------------------------------------------------------------
+   # 2.7 Dietary Intake (2-Day Averages)
+   # --------------------------------------------------------------------------
+
+   kcal_mean   = rowMeans(select(., DR1TKCAL, DR2TKCAL), na.rm = TRUE),
+   kcal_mean   = ifelse(is.nan(kcal_mean), NA_real_, kcal_mean),
+   
+   tprot_mean  = rowMeans(select(., DR1TPROT, DR2TPROT), na.rm = TRUE),
+   tprot_mean  = ifelse(is.nan(tprot_mean), NA_real_, tprot_mean),
+   
+   tcarb_mean  = rowMeans(select(., DR1TCARB, DR2TCARB), na.rm = TRUE),
+   tcarb_mean  = ifelse(is.nan(tcarb_mean), NA_real_, tcarb_mean),
+   
+   tsugar_mean = rowMeans(select(., DR1TSUGR, DR2TSUGR), na.rm = TRUE),
+   tsugar_mean  = ifelse(is.nan(tsugar_mean), NA_real_, tsugar_mean),
+   
+   tfat_mean   = rowMeans(select(., DR1TTFAT, DR2TTFAT), na.rm = TRUE),
+   tfat_mean  = ifelse(is.nan(tfat_mean), NA_real_, tfat_mean),
+   
+   tsatfat_mean  = rowMeans(select(., DR1TSFAT, DR2TSFAT), na.rm = TRUE),
+   tsatfat_mean  = ifelse(is.nan(tsatfat_mean), NA_real_, tsatfat_mean),
+   
+   tmfat_mean  = rowMeans(select(., DR1TMFAT, DR2TMFAT), na.rm = TRUE),
+   tmfat_mean  = ifelse(is.nan(tmfat_mean), NA_real_, tmfat_mean),
+   
+   tpfat_mean  = rowMeans(select(., DR1TPFAT, DR2TPFAT), na.rm = TRUE),
+   tpfat_mean  = ifelse(is.nan(tpfat_mean), NA_real_, tpfat_mean),
+   
+   tunsatfat_mean = tmfat_mean + tpfat_mean,
+    
+    # --------------------------------------------------------------------------
+    # 2.8 Alcohol Consumption & Heavy Drinking Status
+    # Standardized threshold: >30g/day (men) or >20g/day (women)
+    # Note: ALQ121 has a coding discrepancy compared to the NHANES site, where this variable starts at 0
+    # --------------------------------------------------------------------------
+    
+    # convert ALQ121 (frequency) to days per year
+    days_year_alq121 = case_when( 
+      ALQ121 == 2 ~ 365,      # Every day
+      ALQ121 == 3 ~ 286,      # 5-6 days/week (5.5*52)
+      ALQ121 == 4 ~ 182,      # 3-4 days/week (3.5*52)
+      ALQ121 == 5 ~ 104,      # 2 days/week
+      ALQ121 == 6 ~ 52,       # 1 day/week
+      ALQ121 == 7 ~ 30,       # 2-3 days/month (2.5*12)
+      ALQ121 == 8 ~ 12,       # 1 day/month
+      ALQ121 == 9 ~ 9,        # 7-11 days/year (mean = 9)
+      ALQ121 == 10 ~ 4.5,      # 3-6 days/year (mean = 4.5)
+      ALQ121 == 11 ~ 1.5,     # 1-2 days/year (mean = 1.5)
+      TRUE ~ NA_real_
+      ),
+
+     # Calculate average drinks per day (across the entire year)
+     drinks_mean_day = (days_year_alq121 * ALQ130) / 365,
+     
+     alcohol_use = factor(case_when(
+       # Never Drinker
+       ALQ111 == 2 ~ "Never Drinker",
+       
+       # Non-Drinker (did not drink in the last year)
+       ALQ111 == 1 & (ALQ121 == 1) ~ "Former Drinker",
+       
+       # Heavy Drinker
+       !is.na(drinks_mean_day) & (
+         (drinks_mean_day >= 2.143 & RIAGENDR == 1) |   # Men: >30g/day
+         (drinks_mean_day >= 1.429 & RIAGENDR == 2)     # Women: >20g/day
+        ) ~ "Heavy Drinker",
+       
+       # Non-heavy Drinker
+       !is.na(drinks_mean_day) ~ "Non-heavy Drinker",
+       
+       TRUE ~ NA_character_
+       ),
+       levels = c("Never Drinker", "Former Drinker", "Non-heavy Drinker", "Heavy Drinker")),
+
+    # --------------------------------------------------------------------------
+    # 2.9 Smoking Status
+    # --------------------------------------------------------------------------
+
+    smoking = as.factor(case_when(
+      SMQ020 == 2 ~ 0,
+      SMQ040 %in% c(1,2) ~ 2,
+      SMQ040 == 3 ~ 1,
+      TRUE ~ NA_real_
+    )),
+    
+    # --------------------------------------------------------------------------
+    # 2.10 Non-Invasive Liver Biomarkers & Indexes
+    # --------------------------------------------------------------------------
+
+    ast_alt = LBXSASSI / LBXSATSI,
+    homair = (LBXIN * LBXGLU) / 405,  # Matthews et al., Diabetologia 1985
+    
+    hsi = (8 * LBXSASSI / LBXSATSI) + BMXBMI + 
+          ifelse(RIAGENDR == 2, 2, 0) +  # +2 if women
+          ifelse(diabetes == "1", 2, 0),  # hsi: Lee JH et al., Hepatology 2010
+    
+    fli_logit = 0.953 * log(LBXTR) +  
+              0.139 * BMXBMI + 
+              0.718 * log(LBXSGTSI) +  
+              0.053 * BMXWAIST - 15.745,
+    
+    fli = exp(fli_logit) / (1 + exp(fli_logit)) * 100,  # FLI: Bedogni et al., BMC Gastroenterol 2006
+
+    # --------------------------------------------------------------------------
+    # 2.11 Categorical Stratification Variables for Subgroup Analyses
+    # --------------------------------------------------------------------------
+
+    ridageyr_cat = as.factor(case_when(
+      RIDAGEYR < 60  ~ 0,
+      RIDAGEYR >= 60 ~ 1,
+      TRUE           ~ NA_real_
+    )),
+
+    kcal_mean_cat = as.factor(case_when(
+      kcal_mean < median(kcal_mean, na.rm = TRUE)  ~ 0,
+      kcal_mean >= median(kcal_mean, na.rm = TRUE) ~ 1,
+      TRUE           ~ NA_real_
+    )),
+
+    indfmpir_cat = as.factor(case_when(
+      INDFMPIR < 1  ~ 0,
+      INDFMPIR >= 1 ~ 1,
+      TRUE           ~ NA_real_
+    )),
+
+    # --------------------------------------------------------------------------
+    # 2.12 Cardiovascular Disease & Behavioral Combinations
+    # --------------------------------------------------------------------------
+
+    cvd = as.factor(case_when(
+      MCQ160B == 1 |
+      MCQ160C == 1 |
+      MCQ160D == 1 |
+      MCQ160E == 1 |
+      MCQ160F == 1 ~ 1,
+      is.na(MCQ160B) & is.na(MCQ160C) & is.na(MCQ160D) &
+        is.na(MCQ160E) & is.na(MCQ160F) ~ NA,
+      TRUE ~ 0
+      
+      )),
+    
+    
+      
+    # Sedentary behaviour and physical activity
+
+    sb_and_pa = as.factor(case_when(
+      PAD680 >= 480 & mvpa < 150 ~ 1,
+      PAD680 < 480 | mvpa >= 150 ~ 0,
+      TRUE ~ NA_real_
+      
+      )),
+  
+    # High sedentary behaviour - Binary
+
+    sb = as.factor(case_when(
+      PAD680 >= 480 ~ 1,
+      PAD680 < 480 ~ 0,
+      TRUE ~ NA)),
+
+    # At least one metabolic syndrome criteria
+
+   at_least_one_metabolic_disease = as.factor(case_when(
+     rowSums(cbind(
+       diabetes,
+       htn,
+       hypertrigly,
+       low_hdl,
+       overweight_obese
+       ) == 1, na.rm = TRUE) >= 1 ~ 1,
+     
+     rowSums(cbind(
+       diabetes,
+       htn,
+       hypertrigly,
+       low_hdl,
+       overweight_obese
+       ) == 0, na.rm = TRUE) == 5 ~ 0,
+     TRUE ~ NA_real_
+     
+     ))
+)
+
+```
+### Notes
+
+* *Variable coding*
+RIAGENDR = 1 = Male; RIAGENDR = 2 = Female
+DIQ010 = 1 = Yes, doctor told you that you have diabetes
+DIQ050 = 1 = Yes, currently taking insulin
+DIQ070 = 1 = Yes, currently taking diabetic pills to lower blood sugar
+
+* *Medication exposure*
+Lipid-lowering medication use was considered a criterion for hypertriglyceridemia,
+low HDL cholesterol, and elevated total cholesterol/LDL cholesterol.
+NAFLD-inducing medications were identified based on the specified drug classes
+and individual agents listed in the code above.
+
+* *Anthropometric classification*
+Overweight/obesity was defined using BMI and sex-specific waist circumference
+cutoffs, with different thresholds for Asian and non-Asian participants.
+
+* *Dyslipidemia*
+Dyslipidemia was defined as the presence of at least one of the following: elevated total cholesterol, elevated LDL cholesterol, low HDL cholesterol, or hypertriglyceridemia. Lipid-lowering medication use was also considered evidence of dyslipidemia.
+
+* *Diabetes and dysglycemia*
+Diabetes was defined as HbA1c ≥6.5%, fasting plasma glucose ≥126 mg/dL, or self-reported physician-diagnosed diabetes (DIQ010 = 1).
+Dysglycemia/DM2 was defined as HbA1c ≥5.7%, fasting plasma glucose ≥100 mg/dL,
+or self-reported physician-diagnosed diabetes (DIQ010 = 1).
+
+* *Hypertension*
+Hypertension was defined as antihypertensive medication use or systolic blood
+pressure ≥130 mmHg or diastolic blood pressure ≥85 mmHg.
+
+* *Physical activity*
+MVPA was calculated by weighting vigorous physical activity by 2 and adding
+moderate physical activity.
+Total physical activity was expressed as MET-minutes/week using 8 METs for
+vigorous activity and 4 METs for moderate activity.
+
+* *Sedentary behavior*
+A binary sedentary behavior classification was created using a threshold of ≥480 minutes/day (≥8 h/day).
+
+* *Heavy drinking threshold*
+≥30 g/day of alcohol in men and ≥20 g/day in women, corresponding to approximately ≥2.143 and ≥1.429 standard drinks/day, respectively, assuming 14 g of alcohol per standard drink.
+
+ALQ121 coding was mapped to estimated drinking days per year according to the
+frequency categories specified above.
+
+* *Non-invasive liver indexes*
+HSI: Lee JH et al., Hepatology, 2010.
+HOMA-IR: Matthews et al., Diabetologia, 1985.
+FLI: Bedogni et al., BMC Gastroenterology, 2006.
+
+* *Categorical variables*
+Age was categorized at 60 years.
+INDFMPIR was categorized at 1.0.
+Daily energy intake was dichotomized at the sample median.
+
+* *Metabolic syndrome*
+Metabolic syndrome was defined as the presence of at least three of five metabolic abnormalities: central adiposity, hypertriglyceridemia, low HDL cholesterol, hypertension, and dysglycemia/DM2.
+
+```{r Adding nutritional calculated variables, message=FALSE, warning=FALSE}
+
+# ==============================================================================
+# WILLETT'S RESIDUAL METHOD FOR NUTRIENT ENERGY ADJUSTMENT (Willett et al., 1998)
+# ==============================================================================
+
+# The function takes nutrient intake and energy intake and returns
+# nutrient intake adjusted for energy intake, together with regression diagnostics.
+
+willett_adjustment <- function(a, b) {
+  
+  fit <- lm(a ~ b, na.action = na.exclude)
+  mean_b <-mean(model.frame(fit)[[2]], na.rm = TRUE)
+  
+  adjusted <- coef(fit)[1] +
+              coef(fit)[2] * mean_b +
+              residuals(fit)
+  
+  list(
+    adjusted = adjusted,
+    residuals = residuals(fit),
+    ad_test = nortest::ad.test(residuals(fit)),
+    residual_cor = cor(residuals(fit), b, use = "complete.obs")
+  )
+}
+
+# Helper function to plot scatterplots with Pearson correlation coefficient
+
+plot_with_correlation <- function(x, y, x_name, y_name) {
+  plot(x, y, col = "lightblue", xlab = x_name, ylab = y_name)
+  abline(lm(y ~ x), col = "red", lwd = 3)
+  correlation <- cor(x, y, use = "pairwise.complete.obs") 
+  text(min(x, na.rm = TRUE), max(y, na.rm = TRUE),
+       labels = paste("r =", round(correlation, 2)),
+       adj = c(0, 1),
+       cex = 0.8,    
+       col = "blue")
+}
+
+# ==============================================================================
+# APPLYING ENERGY ADJUSTMENT
+# ==============================================================================
+
+tprot <- willett_adjustment(df_temp$tprot_mean, df_temp$kcal_mean)
+tcarb <- willett_adjustment(df_temp$tcarb_mean, df_temp$kcal_mean)
+tsugar <- willett_adjustment(df_temp$tsugar_mean, df_temp$kcal_mean)
+tfat <- willett_adjustment(df_temp$tfat_mean, df_temp$kcal_mean)
+tsatfat <- willett_adjustment(df_temp$tsatfat_mean, df_temp$kcal_mean)
+tmfat <- willett_adjustment(df_temp$tmfat_mean, df_temp$kcal_mean)
+tpfat <- willett_adjustment(df_temp$tpfat_mean, df_temp$kcal_mean)
+tunsatfat <- willett_adjustment(df_temp$tunsatfat_mean, df_temp$kcal_mean)
+
+df_temp$tprot_adj     <- tprot$adjusted
+df_temp$tcarb_adj     <- tcarb$adjusted
+df_temp$tsugar_adj    <- tsugar$adjusted
+df_temp$tfat_adj      <- tfat$adjusted
+df_temp$tsatfat_adj   <- tsatfat$adjusted
+df_temp$tmfat_adj     <- tmfat$adjusted
+df_temp$tpfat_adj     <- tpfat$adjusted
+df_temp$tunsatfat_adj <- tunsatfat$adjusted
+
+# ==============================================================================
+# REGRESSION DIAGNOSTICS
+# ==============================================================================
+
+# Residual correlation with energy
+
+sapply(
+  list(tprot, tcarb, tsugar, tfat, tsatfat, tmfat, tpfat, tunsatfat),
+  function(x) x$residual_cor
+)
+
+# Residual normality assessment
+
+sapply(
+  list(tprot, tcarb, tsugar, tfat, tsatfat, tmfat, tpfat, tunsatfat),
+  function(x) x$ad_test$p.value
+)
+
+# ==============================================================================
+# CORRELATION DIAGNOSTICS (BEFORE VS AFTER ADJUSTMENT)
+# ==============================================================================
+
+# Correlation before adjustment (expected positive correlation)
+
+par(mfrow = c(2, 2))
+plot_with_correlation(df_temp$tprot_mean, df_temp$kcal_mean, "tprot (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tcarb_mean, df_temp$kcal_mean, "Total Carbohydrates (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tsugar_mean, df_temp$kcal_mean, "Total Sugar (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tfat_mean, df_temp$kcal_mean, "Total Fat (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tsatfat_mean, df_temp$kcal_mean, "Total Saturated Fat (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tmfat_mean, df_temp$kcal_mean, "Monounsaturated Fat (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tpfat_mean, df_temp$kcal_mean, "Polyunsaturated Fat (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tunsatfat_mean, df_temp$kcal_mean, "Total Unsaturated Fat (g/d)", "Mean Calories")
+
+# Correlation after adjustment (expected r ≈ 0)
+
+plot_with_correlation(df_temp$tprot_adj, df_temp$kcal_mean, "Adjusted (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tcarb_adj, df_temp$kcal_mean, "Adjusted Total Carbohydrates (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tsugar_adj, df_temp$kcal_mean, "Adjusted  Total Sugar (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tfat_adj, df_temp$kcal_mean, "Adjusted Total Fat (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tsatfat_adj, df_temp$kcal_mean, "Adjusted Total Saturated Fat (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tmfat_adj, df_temp$kcal_mean, "Adjusted Monounsaturated Fat (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tpfat_adj, df_temp$kcal_mean, "Adjusted Polyunsaturated Fat (g/d)", "Mean Calories")
+plot_with_correlation(df_temp$tunsatfat_adj, df_temp$kcal_mean, "Adjusted Total Unsaturated Fat (g/d)", "Mean Calories")
+
+par(mfrow = c(1, 1))
+
+```
+
+# 3.2.1 Creating MASLD
+
+* The code below creates groups according to hepatic steatosis, MASLD, and liver fibrosis.
+* The NAFLD and MASLD groups were created using three cutoffs:
+* 248, as recommended by the American guideline, and 288 and 302,
+* which correspond to different diagnostic sensitivity thresholds.
+
+```{r Creating MASLD Groups, message=FALSE, warning=FALSE}
+
+df_temp <- df_temp %>%
+  
+  # 1. NAFLD (Steatosis)
+  mutate(nafld_288 = as.factor(ifelse(df_temp$LUXCAPM < 288, 0, 1))) %>%
+  
+    
+  # 2. MASLD: steatosis and at least one cardiometabolic criterion
+  mutate(
+    masld_288 = case_when(
+      is.na(LUXCAPM) ~ NA,         # If CAP is missing, MASLD status cannot be determined.
+      nafld_288 == 0 ~ 0,              # Without steatosis, a MASLD diagnosis cannot be made.
+      nafld_288 == 1 & (               # With steatosis and at least one cardiometabolic criterion, MASLD is diagnosed.
+        overweight_obese == 1 |
+        hypertrigly == 1 |
+        low_hdl == 1 |
+        dysglycaemia_dm2 == 1 |
+        htn == 1
+      ) ~ 1,
+      nafld_288 == 1 &                 # In the presence of steatosis without evidence of metabolic dysfunction, but with missing cardiometabolic data, MASLD status cannot be determined.
+        is.na(overweight_obese) |
+        is.na(hypertrigly) |
+        is.na(low_hdl) |
+        is.na(dysglycaemia_dm2) |
+        is.na(htn) ~ NA,
+      TRUE ~ 0
+      ) %>%
+      as.factor()
+    ) %>%
+  
+  # 3. Hepatic fibrosis
+    
+    mutate(hepatic_fibrosis = as.factor(ifelse(df_temp$LUXSMED < 12, 0, 1))) %>%
+
+  # 4. sensitivity analyses: MASLD cutoffs 248 and 302
+
+    mutate(nafld_248 = as.factor(ifelse(df_temp$LUXCAPM < 248, 0, 1))) %>%
+     
+    mutate(
+    masld_248 = case_when(
+      is.na(LUXCAPM) ~ NA,         # If CAP is missing, MASLD status cannot be determined.
+      nafld_248 == 0 ~ 0,          # Without steatosis, a MASLD diagnosis cannot be made.
+      nafld_248 == 1 & (           # With steatosis and at least one cardiometabolic criterion, MASLD is diagnosed.
+        overweight_obese == 1 |
+        hypertrigly == 1 |
+        low_hdl == 1 |
+        dysglycaemia_dm2 == 1 |
+        htn == 1
+      ) ~ 1,
+      nafld_248 == 1 &                # In the presence of steatosis without evidence of metabolic dysfunction,but with missing cardiometabolic data, MASLD status cannot be determined.
+        is.na(overweight_obese) |
+        is.na(hypertrigly) |
+        is.na(low_hdl) |
+        is.na(dysglycaemia_dm2) |
+        is.na(htn) ~ NA,
+      TRUE ~ 0
+      ) %>%
+      as.factor()
+    ) %>%
+  
+    mutate(nafld_302 = as.factor(ifelse(df_temp$LUXCAPM < 302, 0, 1))) %>%
+     
+    mutate(
+    masld_302 = case_when(
+      is.na(LUXCAPM) ~ NA,        
+      nafld_302 == 0 ~ 0,         
+      nafld_302 == 1 & (          
+        overweight_obese == 1 |
+        hypertrigly == 1 |
+        low_hdl == 1 |
+        dysglycaemia_dm2 == 1 |
+        htn == 1
+      ) ~ 1,
+      nafld_302 == 1 &                
+        is.na(overweight_obese) |
+        is.na(hypertrigly) |
+        is.na(low_hdl) |
+        is.na(dysglycaemia_dm2) |
+        is.na(htn) ~ NA,
+      TRUE ~ 0
+      ) %>%
+      as.factor()
+    )
+```
+**Note 1:** MASLD diagnosis: CAP ≥ 288 dB/m (Rinella ME, et al. NAFLD Nomenclature consensus group. A multisociety Delphi consensus statement on new fatty liver disease nomenclature. J Hepatol. 2023). CAP ≥ 248 dB/m (EASL–EASD–EASO Clinical Practice Guidelines on the management of metabolic dysfunction-associated steatotic liver disease (MASLD): Executive Summary).
+
+**Note 2:** Liver stiffness (marker of liver fibrosis) ≥ 12 kPa
+(Reference: EASL–EASD–EASO Clinical Practice Guidelines on the management of metabolic dysfunction-associated steatotic liver disease (MASLD): Executive Summary)
+
+
+# 4. Creating the Working Data Frame
+
+```{r Selecting variables for the working data frame, message=FALSE, warning=FALSE}
+
+df <- df_temp %>%
+  select(
+    SEQN, WTSAFPRP, SDMVPSU, RIAGENDR, SDMVSTRA, RIDAGEYR, ridageyr_cat, 
+    race_1, race_2, race_3, education, INDFMPIR, indfmpir_cat, BMXWAIST,
+    BMXBMI, LUXSMED, sbp, dbp, LUXCAPM, hsi, fli, nafld_288, nafld_248,
+    nafld_302, masld_288, masld_248, masld_302, hepatic_fibrosis, LBXTC,
+    LBDHDD, LBXGLU, LBXIN, LBXGH, LBDLDL, LBXTR, LBXSATSI, LBXSASSI, LBXSGTSI,
+    homair, PAD680, pad680_hours, work_activity, transportation_activity,
+    recreational_activity, mvpa, mvpa_category, pa_met, ast_alt, smoking,
+    alcohol_use, overweight_obese, diabetes, htn, hypertrigly, low_hdl,
+    kcal_mean, kcal_mean_cat, tprot_adj, tcarb_adj, tsugar_adj, tfat_adj,
+    tsatfat_adj, tunsatfat_adj, nafld_induced_agents, LUAXSTAT, RIDEXPRG,
+    LBDHBG, LBXHCR, dysglycaemia_dm2, cvd, metabolic_syndrome, sb, dyslipidemia
+    )
+```
+
+```{r Inclusion and Exclusion Criteria - Filters, message=FALSE, warning=FALSE}
+
+# # Filtering the fasting subset
+
+df <- df %>%
+  filter(
+    !is.na(WTSAFPRP), # Sample weight (fasting subset) cannot be NA
+    WTSAFPRP > 0,     # Sample weight (fasting subset) must be positive.
+    !is.na(SDMVPSU),  # SDMVPSU cannot be NA - Requirement for survey analysis
+    !is.na(SDMVSTRA)  # SDMVSTRA cannot be NA - Requirement for survey analysis
+  )
+
+# SDMVPSU = Sample Design Multi-stage Variance Primary Sampling Unit
+# SDMVSTRA = Sample Design Multi-stage Variance STRAtum
+
+cat(sprintf("Initial total N (NHANES 2017-March 2020): %d\n", nrow(df_temp)))
+cat(sprintf("N eligible for survey analysis (fasting subset): %d\n", 
+            nrow(df)))
+
+# Creating the complex survey design object
+svy_design <- svydesign(
+  ids = ~ SDMVPSU,   
+  strata = ~ SDMVSTRA, 
+  weights = ~ WTSAFPRP,
+  data = df,
+  nest = TRUE 
+)
+
+# Creating the analysis subset by applying inclusion and exclusion criteria
+
+svy_design_subset <- subset(svy_design,
+                            RIDAGEYR >= 20                    &
+                            LUAXSTAT == 1                     &
+                            !is.na(LUXCAPM)                   &
+                            !is.na(masld_288)                 &
+                            !is.na(PAD680)                    &
+                            (RIDEXPRG != 1 | is.na(RIDEXPRG)) &
+                            (alcohol_use != "Heavy Drinker" |
+                               is.na(alcohol_use))            &
+                            (LBDHBG != 1 | is.na(LBDHBG))     &
+                            (LBXHCR != 1 | is.na(LBXHCR))     &
+                            (nafld_induced_agents == FALSE| 
+                              is.na(nafld_induced_agents))
+                            )
+
+cat(sprintf("Final N after applying eligibility criteria: %d\n\n", 
+            nrow(svy_design_subset$variables)))
+
+# Removing unnecessary variables
+
+svy_design_subset$variables <- svy_design_subset$variables %>%
+  select(-c(nafld_induced_agents, LUAXSTAT, RIDEXPRG, LBDHBG, LBXHCR))
+
+```
+
+```{r Step-by-Step Participant Exclusions}
+
+cat("PARTICIPANT SELECTION FLOWCHART\n")
+
+# ----------------------------------------------------------------------------
+# 1. INITIAL COUNT
+# ----------------------------------------------------------------------------
+
+# Initial sample (before any filtering)
+
+n_inicial <- nrow(df_temp)
+cat("INITIAL SAMPLE (NHANES 2017-2020): N =", format(n_inicial, big.mark = ","), "participants\n\n")
+
+# ----------------------------------------------------------------------------
+# 2. SEQUENTIAL APPLICATION OF CRITERIA
+# ----------------------------------------------------------------------------
+
+# Start with the complete df_temp
+df_flow <- df_temp
+
+# Create vector to store N at each step
+exclusion_steps <- data.frame(
+  Step = character(),
+  N = numeric(),
+  N_Excluded = numeric(),
+  Reason = character(),
+  stringsAsFactors = FALSE
+)
+
+# Helper function to add a row
+add_step <- function(step_name, n_current, n_previous, reason = "") {
+  n_excluded <- n_previous - n_current
+  exclusion_steps <<- rbind(exclusion_steps, data.frame(
+    Step = step_name,
+    N = n_current,
+    N_Excluded = n_excluded,
+    Reason = reason
+  ))
+}
+
+# Step 0: Initial sample
+add_step("Initial sample (NHANES 2017-2020)", n_inicial, n_inicial, "All participants")
+
+# ----------------------------------------------------------------------------
+# STEP 1: FASTING CRITERION
+# ----------------------------------------------------------------------------
+
+n_before <- nrow(df_flow)
+
+df_flow <- df_flow %>%
+  filter(
+    !is.na(WTSAFPRP),
+    WTSAFPRP > 0
+  )
+
+n_after <- nrow(df_flow)
+
+add_step("After fasting criterion", n_after, n_before, 
+         "Adequate fasting (≥8 h and <24 h) and valid blood sample")
+
+# ----------------------------------------------------------------------------
+# STEP 2: AGE ≥ 20 YEARS
+# ----------------------------------------------------------------------------
+
+n_before <- nrow(df_flow)
+
+df_flow <- df_flow %>%
+  filter(RIDAGEYR >= 20)
+
+n_after <- nrow(df_flow)
+
+add_step("After age criterion", n_after, n_before, 
+         "Age ≥20 years")
+
+# ----------------------------------------------------------------------------
+# STEP 3: COMPLETE LIVER ELASTOGRAPHY
+# ----------------------------------------------------------------------------
+
+n_before <- nrow(df_flow)
+
+df_flow <- df_flow %>%
+  filter(LUAXSTAT == 1)
+
+n_after <- nrow(df_flow)
+
+add_step("After complete liver elastography", n_after, n_before, 
+         "Complete examination: fasting ≥3 h, ≥10 measurements, IQR/median <30%")
+
+# ----------------------------------------------------------------------------
+# STEP 4: STEATOSIS DATA (CAP)
+# ----------------------------------------------------------------------------
+
+n_before <- nrow(df_flow)
+
+df_flow <- df_flow %>%
+  filter(!is.na(LUXCAPM))
+
+n_after <- nrow(df_flow)
+
+add_step("After CAP data availability", n_after, n_before, 
+         "Controlled Attenuation Parameter (LUXCAPM) available")
+
+# ----------------------------------------------------------------------------
+# STEP 5: MASLD DATA
+# ----------------------------------------------------------------------------
+
+n_before <- nrow(df_flow)
+
+df_flow <- df_flow %>% 
+  filter(!is.na(masld_288))
+
+n_after <- nrow(df_flow)
+
+add_step("After MASLD data (CAP ≥288 dB/m) availability", n_after, n_before,
+         "Hepatic steatosis + metabolic assessment available")
+
+# ----------------------------------------------------------------------------
+# STEP 6: SEDENTARY BEHAVIOR DATA
+# ----------------------------------------------------------------------------
+
+n_before <- nrow(df_flow)
+
+df_flow <- df_flow %>%
+  filter(!is.na(PAD680))
+
+n_after <- nrow(df_flow)
+
+add_step("After sedentary behavior data availability", n_after, n_before, 
+         "Sedentary time (PAD680) available")
+
+# ----------------------------------------------------------------------------
+# STEP 7: EXCLUSION OF PREGNANT WOMEN
+# ----------------------------------------------------------------------------
+
+n_before <- nrow(df_flow)
+
+df_flow <- df_flow %>%
+  filter(RIDEXPRG != 1 | is.na(RIDEXPRG))
+
+n_after <- nrow(df_flow)
+
+add_step("After exclusion of pregnant women", n_after, n_before, 
+         "Confirmed pregnancy (RIDEXPRG = 1)")
+
+# ----------------------------------------------------------------------------
+# STEP 8: HEAVY DRINKERS
+# ----------------------------------------------------------------------------
+
+n_before <- nrow(df_flow)
+
+df_flow <- df_flow %>%
+  filter(alcohol_use != "Heavy Drinker" | is.na(alcohol_use))
+
+n_after <- nrow(df_flow)
+
+add_step("After exclusion of heavy drinkers", n_after, n_before, 
+         "Heavy alcohol consumption (>30 g/day in men, >20 g/day in women)")
+
+# ----------------------------------------------------------------------------
+# STEP 9: HEPATITIS B
+# ----------------------------------------------------------------------------
+
+n_before <- nrow(df_flow)
+
+df_flow <- df_flow %>%
+  filter(LBDHBG != 1 | is.na(LBDHBG))
+
+n_after <- nrow(df_flow)
+
+add_step("After exclusion of HBV", n_after, n_before, 
+         "Positive hepatitis B surface antigen")
+
+# ----------------------------------------------------------------------------
+# STEP 10: HEPATITIS C
+# ----------------------------------------------------------------------------
+
+n_before <- nrow(df_flow)
+
+df_flow <- df_flow %>%
+  filter(LBXHCR != 1 | is.na(LBXHCR))
+
+n_after <- nrow(df_flow)
+
+add_step("After exclusion of HCV", n_after, n_before, 
+         "Positive anti-HCV antibody")
+
+# ----------------------------------------------------------------------------
+# STEP 11: STEATOGENIC MEDICATIONS
+# ----------------------------------------------------------------------------
+
+n_before <- nrow(df_flow)
+
+df_flow <- df_flow %>%
+  filter(nafld_induced_agents == FALSE | is.na(nafld_induced_agents))
+
+n_after <- nrow(df_flow)
+
+add_step("Final analytic sample", n_after, n_before, 
+         "Use of steatogenic medications (corticosteroids, amiodarone, etc.)")
+
+# ----------------------------------------------------------------------------
+# 3. CREATE FORMATTED TABLE
+# ----------------------------------------------------------------------------
+
+cat("FINAL SUMMARY\n \n",
+    "Initial sample:", format(n_inicial, big.mark = ","), "\n",
+    "Final sample:", format(n_after, big.mark = ","), "\n",
+    "Total excluded:", format(n_inicial - n_after, big.mark = ","), 
+    sprintf("(%.1f%%)\n", 100 * (n_inicial - n_after) / n_inicial)
+    )
+
+# Prepare table
+exclusion_table <- exclusion_steps %>%
+  mutate(
+    Percentage_Excluded = ifelse(N_Excluded > 0, 
+                                sprintf("%.1f%%", 100 * N_Excluded / dplyr::lag(N)), 
+                                "—"),
+    Percentage_of_Initial = sprintf("%.1f%%", 100 * N / n_inicial)
+  )
+
+View(exclusion_steps)
+
+# Adjust first row (no exclusions)
+exclusion_table$Percentage_Excluded[1] <- "—"
+
+# Display simple table
+cat("\n\nEXCLUSION TABLE:\n \n")
+
+# ----------------------------------------------------------------------------
+# 4. FORMATTED TABLE WITH GT
+# ----------------------------------------------------------------------------
+
+gt_table <- exclusion_table %>%
+  gt() %>%
+  tab_header(
+    title = "Participant Selection Flowchart",
+    subtitle = "NHANES 2017-March 2020 (Pre-pandemic)"
+  ) %>%
+  cols_label(
+    Reason = "Exclusion Criterion",
+    #Step = "Selection Step",
+    N_Excluded = "Excluded",
+    N = "N",
+    Percentage_Excluded = "% Excluded",
+    Percentage_of_Initial = "% of Initial"
+    
+  ) %>%
+  fmt_number(
+    columns = c(N, N_Excluded),
+    decimals = 0,
+    sep_mark = ","
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(
+      columns = everything(),
+      rows = Step == "Initial sample (NHANES 2017-2020)"
+    )
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(
+      columns = everything(),
+      rows = Step == "Final analytic sample"
+    )
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "#E8F4F8"),
+    locations = cells_body(
+      rows = Step == "Final analytic sample"
+    )
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "#F5F5F5"),
+    locations = cells_body(
+      rows = Step == "Initial sample (NHANES 2017-2020)"
+    )
+  ) %>%
+  cols_align(
+    align = "center",
+    columns = c(N, N_Excluded, Percentage_Excluded, Percentage_of_Initial)
+  ) %>%
+  cols_align(
+    align = "left",
+    columns = c(Step, Reason)
+  ) %>%
+  tab_footnote(
+    footnote = "Heavy drinking defined as >30 g/day for men or >20 g/day for women",
+    locations = cells_body(columns = Reason, rows = Step == "After exclusion of heavy drinkers")
+  ) %>%
+  tab_footnote(
+    footnote = "Complete examination: fasting ≥3 h, ≥10 valid measurements, IQR/median <30%",
+    locations = cells_body(columns = Reason, rows = Step == "After complete liver elastography")
+  ) %>%
+  tab_footnote(
+    footnote = "Steatogenic medications: corticosteroids, amiodarone, methotrexate, tamoxifen, valproic acid",
+    locations = cells_body(columns = Reason, rows = Step == "Final analytic sample")
+  ) %>%
+  tab_options(
+    table.font.size = 11,
+    heading.title.font.size = 14,
+    heading.subtitle.font.size = 12
+  )
+
+gt_table
+
+# Save table
+gtsave(gt_table, here("participant_selection_flowchart.docx"))
+cat("\n✓ Tables exported to:", here(), "\n")
+
+```
+
+```{r Saving weighted survey design object, message=FALSE, warning=FALSE}
+
+# Salvando objeto com ponderação
+save(svy_design_subset, file = "df_weighted.RData")
+
+
+```
+

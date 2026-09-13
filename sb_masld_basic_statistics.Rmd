@@ -1,0 +1,481 @@
+---
+title: "Association Between Sedentary Behavior and Metabolic Dysfunction-Associated Steatotic Liver Disease in U.S. Adults: A Cross-Sectional Analysis of NHANES 2017–2020"
+subtitle: "Basic Descriptive Statistics"
+author: "Guilherme da Silva Ferreira"
+date: "2026-09-12 (YYYY-MM-DD)"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+## Overview
+
+This document is part of the Association Between Sedentary Behavior and Metabolic Dysfunction-Associated Steatotic Liver Disease in U.S. Adults: A Cross-Sectional Analysis of NHANES 2017–2020 analysis pipeline and is not intended to be executed independently. It relies on data, derived variables, and objects generated in previous stages of the pipeline.
+
+---
+
+### Variable Naming Convention
+
+* **UPPERCASE variables:** Retain their original NHANES variable names (with missing value codes converted to `NA` and skip patterns handled appropriately).
+* **lowercase variables:** Represent derived variables created during processing (e.g., `smoker`).
+
+---
+
+### Key Resources & Documentation
+
+* [NHANES Continuous Data Files (CDC)](https://wwwn.cdc.gov/nchs/nhanes/search/default.aspx)
+* [The Epidemiologist R Handbook](https://www.epirhandbook.com/en/)
+* [CDC NHANES R Tutorial Examples](https://wwwn.cdc.gov/nchs/data/tutorials/module3_examples_R.r)
+* [STC Library Reference](https://libstc.cc/#/stc/nid:6e7ka238xj6qcuyf7dkdkuyfo)
+* [R for Medical Public Health Data Analysis](https://bookdown.org/rwnahhas/RMPH/intro.html)
+
+
+# 1. Loading and Installing Required Packages
+
+```{r setup-packages, message=FALSE, warning=FALSE}
+
+# Clear workspace
+rm(list = ls())
+
+# Define required packages
+required_packages <- c("survey", "tidyverse", "skimr", "lmtest", "gt", "gtsummary", "broom", "here","rio", "moments", "naniar")
+
+# Install missing packages automatically
+for (pkg in required_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+  }
+}
+
+# Load all packages silently
+suppressPackageStartupMessages({
+  invisible(lapply(required_packages, library, character.only = TRUE))
+})
+
+# Display current R version
+cat("R Version:", as.character(getRversion()), "\n")
+
+```
+
+
+```{r load-libraries, message=FALSE, warning=FALSE}
+
+# Load required libraries
+library(survey)
+library(tidyverse)
+library(gtsummary)
+library(gt)
+library(skimr)
+library(rio)
+library(here)
+library(moments)
+library(naniar)
+
+
+# Display loaded package versions
+cat("R package versions:\n")
+for (p in required_packages) {
+  cat(p, ": ", as.character(packageVersion(p)), "\n")
+}
+
+# Configure survey package options
+# Specify how the survey package should handle strata containing only one
+# Primary Sampling Unit (PSU).
+
+options(survey.lonely.psu = "adjust")
+options(survey.adjust.domain.lonely = TRUE)
+
+```
+
+# 2. Loading Design and Data Frame
+
+```{r loading-design, message=FALSE, warning=FALSE}
+
+load("df_weighted.RData")
+summary(svy_design_subset)
+
+```
+
+# 3. Data Visualization
+
+``` {r missing-data, message=FALSE, warning=FALSE}
+
+# Counting Missing Data
+
+missing_summary <- skim(svy_design_subset$variables) %>%
+  select(
+    Variable = skim_variable,
+    `Missing Data (n)` = n_missing,
+    `Complete Rate (%)` = complete_rate
+  ) %>%
+  mutate(`Complete Rate (%)` = round(100 * `Complete Rate (%)`, 2)) %>%
+  arrange(desc(`Complete Rate (%)`))
+
+export(missing_summary, here("Tables", "missing_data.csv"))
+missing_summary
+
+# Counting complete cases
+
+naniar::pct_complete_case(svy_design_subset$variables)
+
+```
+
+
+``` {r descriptive-summary, message=FALSE, warning=FALSE}
+
+skim(svy_design_subset$variables)
+
+```
+
+```{r drop-unused-levels, message=FALSE, warning=FALSE}
+
+# Remove unused factor levels
+
+svy_design_subset$variables <- svy_design_subset$variables %>%
+  mutate(
+    alcohol_use = fct_drop(alcohol_use)
+  )
+```
+
+```{r data-distribution-and-boxplot, message=FALSE, warning=FALSE}
+
+par(mfrow = c(1, 2))
+
+# Numeric variables for analysis, excluding IDs and weights
+df_vars <- names(svy_design_subset$variables)[
+  sapply(svy_design_subset$variables, is.numeric)
+]
+vars_to_analyze <- setdiff(df_vars, c("SEQN", "WTSAFPRP", "SDMVPSU", "SDMVSTRA"))
+
+par(mfrow = c(1, 2)) # Two plots side by side
+
+for (var in vars_to_analyze) {
+  
+  # Formulas for histogram and boxplot
+  f_hist <- as.formula(paste0("~", var))
+  f_box  <- as.formula(paste0(var, " ~ 1"))
+  
+  # Weighted mean and standard deviation
+  mean_val <- as.numeric(coef(svymean(
+    f_hist, svy_design_subset, na.rm = TRUE
+  )))
+  sd_val <- sqrt(svyvar(f_hist, svy_design_subset, na.rm = TRUE))
+  
+  # Weighted histogram
+  svyhist(
+    f_hist,
+    design = svy_design_subset,
+    main = paste("Weighted distribution -", var),
+    xlab = var,
+    col = "skyblue",
+    border = "black"
+  )
+  abline(v = mean_val, col = "red", lwd = 2)
+  
+  # Weighted boxplot
+  svyboxplot(
+    f_box,
+    svy_design_subset,
+    main = paste("Weighted boxplot -", var),
+    col = "lightgreen",
+    all.outliers = TRUE
+  )
+  
+  # Weighted skewness and kurtosis
+  x <- svy_design_subset$variables[[var]]
+  w <- weights(svy_design_subset)
+  valid <- !is.na(x) & !is.na(w)
+  x <- x[valid]
+  w <- w[valid]
+  
+  m2 <- sum(w * (x - mean_val)^2) / sum(w)
+  m3 <- sum(w * (x - mean_val)^3) / sum(w)
+  m4 <- sum(w * (x - mean_val)^4) / sum(w)
+  
+  skew <- m3 / (m2^(3/2))
+  kurt <- m4 / (m2^2)
+  
+  # Print results
+  cat("\n---", var, "---\n")
+  cat("Weighted mean:", mean_val, "\n")
+  cat("Weighted standard deviation:", sd_val, "\n")
+  cat("Weighted skewness:", skew, "\n")
+  cat("Weighted kurtosis:", kurt, "\n")
+}
+```
+_NOTE_ Skewness: ideally between −1 and +1, preferably between −0.5 and +0.5.
+_NOTE_ Raw kurtosis: ideally between 2 and 4, preferably between 2.5 and 3.5.
+
+Interpretation:
+
+Skewness ≈ 0: approximately symmetric distribution.
+Skewness > 0: right-skewed distribution, with a longer upper tail.
+Skewness < 0: left-skewed distribution, with a longer lower tail.
+Kurtosis ≈ 3: similar to a normal distribution.
+Kurtosis < 3: more platykurtic (flatter distribution).
+Kurtosis > 3: more leptokurtic (greater concentration and/or heavier tails).
+
+These ranges are practical descriptive guidelines, not strict criteria for determining whether a variable follows a normal distribution.
+
+```{r categorical-distribution}
+
+par(mfrow = c(1, 2))
+
+# Identify categorical variables (factors or character variables)
+cat_vars <- names(svy_design_subset$variables)[
+  sapply(svy_design_subset$variables, function(x) is.factor(x) | is.character(x))
+]
+
+# Generate weighted bar plots
+for (var in cat_vars) {
+  
+  # Create weighted frequency table
+  tbl <- svytable(
+    as.formula(paste0("~", var)),
+    svy_design_subset,
+    Ntotal = 1
+  )
+  
+  # Prepare title and labels
+  main_txt <- paste("Weighted distribution -", var)
+  xlab_txt <- var
+  ylab_txt <- "Proportion"
+  
+  # Generate bar plot
+  barplot(
+    tbl,
+    main = main_txt,
+    xlab = xlab_txt,
+    ylab = ylab_txt,
+    cex.names = 0.7,
+    col = "skyblue",
+    border = "black",
+    las = 2
+  )
+  
+}
+```
+
+# 4. Descriptive Statistics of the Study Sample
+
+```{r data-summary, message=FALSE, warning=FALSE}
+
+descriptive_vars <- c(
+  
+  # Demographics
+  "RIDAGEYR", "RIAGENDR", "race_3", "education", "INDFMPIR",
+  
+  # Anthropometric
+  "BMXBMI", "BMXWAIST", "overweight_obese",
+  
+  # Blood pressure
+  "sbp", "dbp", "htn",
+  
+  # Lipids
+  "LBXTC", "LBDHDD", "LBDLDL", "LBXTR", "low_hdl", "dyslipidemia",
+  
+  # Glucose
+  "LBXGLU", "LBXGH", "dysglycaemia_dm2",
+  
+  # Lifestyle
+  "kcal_mean", "tsugar_adj", "tsatfat_adj", "smoking", "alcohol_use",
+  
+  # Physical activity
+  "mvpa_category", "PAD680",
+  
+  # Desfechos hepáticos
+  "LUXCAPM", "LUXSMED", "masld_288", "hepatic_fibrosis"
+)
+
+# Criar um vetor nomeado com os rótulos personalizados
+custom_labels <- list(
+  
+  # Demographic
+  RIDAGEYR = "Age (years)",
+  RIAGENDR = "Sex, Male",
+  race_3 = "Race/Ethnicity",
+  education = "Educational level",
+  INDFMPIR = "Income-to-Poverty Ratio",
+  
+  # Anthropometric
+  BMXBMI = "BMI (kg/m²)",
+  BMXWAIST = "Waist circumference (cm)",
+  overweight_obese = "Overweight/Obesity",
+  
+  # Blood pressure
+  sbp = "SBP (mmHg)",
+  dbp = "DBP (mmHg)",
+  htn = "Hypertension",
+  
+  # Lipids
+  LBXTC = "Total cholesterol (mg/dL)",
+  LBDLDL = "LDL-C (mg/dL)",
+  LBDHDD = "HDL-C (mg/dL)",
+  LBXTR = "Triglycerides (mg/dL)",
+  low_hdl = "Low HDL-C",
+  dyslipidemia = "Dyslipidemia",
+  
+  # Glucose
+  LBXGLU = "Fasting glucose (mg/dL)",
+  LBXGH = "HbA1c (%)",
+  dysglycaemia_dm2 = "Prediabetes/Diabetes",
+  
+  # Lifestyle
+  kcal_mean = "Total energy intake (kcal/day)",
+  tsugar_adj = "Sugar intake",
+  tsatfat_adj = "Saturated fat intake",
+  smoking = "Smoking",
+  alcohol_use = "Alcohol use",
+  
+  # Physical activity
+  mvpa_category = "Physical activity (≥150 min/week)",
+  PAD680 = "Sedentary behavior (min/day)",
+  
+  # Liver outcomes
+  LUXCAPM = "CAP (dB/m)",
+  LUXSMED = "Liver stiffness (kPa)",
+  masld_288 = "MASLD",
+  hepatic_fibrosis = "Advanced liver fibrosis"
+  
+)
+
+
+```
+
+
+```{r descriptive-table, message=FALSE, warning=FALSE}
+
+# ==============================================================================
+# SURVEY-WEIGHTED DESCRIPTIVE TABLE
+# ==============================================================================
+
+# Total unweighted sample size
+n_total <- nrow(svy_design_subset$variables)
+
+descriptive_tbl_weighted <- svy_design_subset %>%
+  tbl_svysummary(
+    by = !!rlang::sym("masld_288"),
+    include = c(all_of(descriptive_vars), -masld_288),
+    missing = "no",
+    label = custom_labels,
+    statistic = list(
+      all_continuous() ~ "{mean} ± {sd}",
+      all_dichotomous() ~ "{n_unweighted} ({p}%)",
+      all_categorical() ~ "{n_unweighted} ({p}%)"
+    ),
+    type = list(
+      c(
+        RIAGENDR, overweight_obese, low_hdl,
+        dysglycaemia_dm2, htn, hepatic_fibrosis,
+        mvpa_category, dyslipidemia
+      ) ~ "dichotomous",
+      c("race_3", "education", "smoking") ~ "categorical"
+    ),
+    value = list(
+      RIAGENDR ~ "1",
+      overweight_obese ~ "1",
+      low_hdl ~ "1",
+      dysglycaemia_dm2 ~ "1",
+      htn ~ "1",
+      hepatic_fibrosis ~ "1",
+      mvpa_category ~ "≥150 min/week",
+      dyslipidemia ~ "1"
+    )
+  ) %>%
+  add_overall(
+    last = FALSE,
+    col_label = glue::glue("**All Participants**<br>n = {n_total}")
+  ) %>%
+  # Dynamic headers
+  modify_header(
+    label ~ "**Variables**",
+    all_stat_cols() ~ "**{level}**<br>n = {n_unweighted}",
+    stat_1 ~ "**Control**<br>n = {n_unweighted}",
+    stat_2 ~ "**MASLD**<br>n = {n_unweighted}"
+  ) %>%
+  # Spanning header
+  modify_spanning_header(
+    starts_with("stat_") ~ "**MASLD Status**"
+  ) %>%
+  modify_caption(
+    "**Table 1. Survey-Weighted Baseline Characteristics of U.S. Adults Stratified by MASLD (CAP ≥288 dB/m)**"
+  ) %>%
+  bold_labels() %>%
+  # Replace factor level codes with descriptive labels in the table only
+  modify_table_body(
+    ~ .x %>%
+      mutate(
+        label = case_when(
+          variable == "race_3" & row_type == "level" & label == "1" ~
+            "Other race/ethnicity",
+          variable == "race_3" & row_type == "level" & label == "3" ~
+            "Non-Hispanic White",
+          
+          variable == "education" & row_type == "level" & label == "1" ~
+            "≤ High school/GED",
+          variable == "education" & row_type == "level" & label == "3" ~
+            "> High school",
+          
+          variable == "smoking" & row_type == "level" & label == "0" ~
+            "Never smoker",
+          variable == "smoking" & row_type == "level" & label == "1" ~
+            "Former smoker",
+          variable == "smoking" & row_type == "level" & label == "2" ~
+            "Current smoker",
+          
+          TRUE ~ label
+        )
+      )
+  ) %>%
+  modify_footnote(
+    update = all_stat_cols() ~ paste(
+      "Data presented as unweighted n and weighted percentage (%) for categorical variables,",
+      "and mean ± standard deviation for continuous variables. Estimates are weighted to be representative of the",
+      "non-institutionalized U.S. adult population using NHANES fasting subsample weights and",
+      "accounting for the complex survey design. Weighted sample size: n = {N}.",
+      "CAP = Controlled Attenuation Parameter; MASLD = Metabolic dysfunction-associated steatotic liver disease;",
+      "MVPA = Moderate-to-Vigorous Physical Activity; BP = Blood Pressure;",
+      "HDL-C = High-Density Lipoprotein Cholesterol; LDL-C = Low-Density Lipoprotein Cholesterol."
+    )
+  )
+
+# Display table
+descriptive_tbl_weighted
+
+# Export table
+gtsave(
+  as_gt(descriptive_tbl_weighted),
+  here("Tables", "descriptive_table_weighted.docx")
+)
+
+gtsave(
+  as_gt(descriptive_tbl_weighted),
+  here("Tables", "descriptive_table_weighted.pdf")
+)
+
+# Display table
+descriptive_tbl_weighted
+
+# Export table
+gtsave(
+  as_gt(descriptive_tbl_weighted),
+  here("Tables", "descriptive_table_weighted.docx")
+)
+
+gtsave(
+  as_gt(descriptive_tbl_weighted),
+  here("Tables", "descriptive_table_weighted.pdf")
+)
+```
+**Note:** If a variable is a factor with exactly two levels labeled “Yes” and “No”, `tbl_summary()` by default displays only the row corresponding to “Yes”. The same applies to variables with `TRUE/FALSE` or `1/0` values. Use the `value` argument to specify the displayed level (see `?gtsummary::tbl_summary`). Alternatively, set `type` to `"categorical"` to display all levels.
+
+**Note:** P-values are not included in Table 1. The primary purpose of a descriptive table is to summarize the characteristics and distributions of the study population rather than to formally test differences between groups. P-values are highly dependent on sample size and may identify statistically significant differences that are not clinically meaningful, particularly in large samples. Confounding should be assessed based on prior knowledge and causal considerations rather than statistical significance alone (Vandenbroucke et al., 2007; Moher et al., 2010, https://bookdown.org/rwnahhas/RMPH/datasumm-table1.html).

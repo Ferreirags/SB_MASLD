@@ -1,0 +1,1219 @@
+---
+title: "Association Between Sedentary Behavior and Metabolic Dysfunction-Associated Steatotic Liver Disease in U.S. Adults: A Cross-Sectional Analysis of NHANES 2017–2020"
+subtitle: "Regression models"
+author: "Guilherme Ferreira"
+date: "2026-09-12 (YYYY-MM-DD)"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+## Overview
+
+This document is part of the Association Between Sedentary Behavior and Metabolic Dysfunction-Associated Steatotic Liver Disease in U.S. Adults: A Cross-Sectional Analysis of NHANES 2017–2020 analysis pipeline and is not intended to be executed independently. It relies on data, derived variables, and objects generated in previous stages of the pipeline.
+
+---
+
+### Variable Naming Convention
+
+* **UPPERCASE variables:** Retain their original NHANES variable names (with missing value codes converted to `NA` and skip patterns handled appropriately).
+* **lowercase variables:** Represent derived variables created during processing (e.g., `smoker`).
+
+---
+
+### Key Resources & Documentation
+
+* [NHANES Continuous Data Files (CDC)](https://wwwn.cdc.gov/nchs/nhanes/search/default.aspx)
+* [The Epidemiologist R Handbook](https://www.epirhandbook.com/en/)
+* [CDC NHANES R Tutorial Examples](https://wwwn.cdc.gov/nchs/data/tutorials/module3_examples_R.r)
+* [STC Library Reference](https://libstc.cc/#/stc/nid:6e7ka238xj6qcuyf7dkdkuyfo)
+* [R for Medical Public Health Data Analysis](https://bookdown.org/rwnahhas/RMPH/intro.html)
+
+
+# 1. Loading and Installing Required Packages
+```{r Download Packages}
+
+# Clear workspace
+rm(list = ls())
+
+# Define required packages
+required_packages <- c("survey", "tidyverse", "gtsummary", "gt", "here", "rio", "broom", "car", "conflicted")
+
+for (pkg in required_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+  }
+}
+
+# Load all packages silently
+suppressPackageStartupMessages({
+  invisible(lapply(required_packages, library, character.only = TRUE))
+})
+
+# Display current R version
+cat("R Version:", as.character(getRversion()), "\n")
+
+```
+
+```{r load-libraries, message=FALSE, warning=FALSE}
+
+# Load required libraries
+library(survey)
+library(tidyverse)
+library(gtsummary)
+library(gt)
+library(rio)
+library(here)
+library(broom)
+library(car)
+
+library(conflicted)
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
+
+# Display loaded package versions
+cat("R package versions:\n")
+for (p in required_packages) {
+  cat(p, ": ", as.character(packageVersion(p)), "\n")
+}
+
+# Configure survey package options
+# Specify how the survey package should handle strata containing only one
+# Primary Sampling Unit (PSU).
+
+options(survey.lonely.psu = "adjust")
+options(survey.adjust.domain.lonely = TRUE)
+```
+
+
+```{r loading-design-and-drop-unused-levels, message=FALSE, warning=FALSE}
+
+load("df_weighted.RData")
+
+# Remove níveis sem observações
+svy_design_subset$variables <- svy_design_subset$variables %>%
+  mutate(
+    alcohol_use = fct_drop(alcohol_use) 
+  )
+```
+
+
+```{r Initial-configurations, message=FALSE, warning=FALSE}
+
+# Define dependent variable
+dependent_variable <- "masld_288"
+
+descriptive_vars <- c(
+  
+  # Demographics
+  "RIDAGEYR", "RIAGENDR", "race_3", "education", "INDFMPIR",
+  
+  # Anthropometric
+  "BMXBMI", "BMXWAIST", "overweight_obese",
+  
+  # Blood pressure
+  "sbp", "dbp", "htn",
+  
+  # Lipids
+  "LBXTC", "LBDHDD", "LBDLDL", "LBXTR", "low_hdl", "dyslipidemia",
+  
+  # Glucose
+  "LBXGLU", "LBXGH", "dysglycaemia_dm2",
+  
+  # Lifestyle
+  "kcal_mean", "tsugar_adj", "tsatfat_adj", "smoking", "alcohol_use",
+  
+  # Physical activity
+  "mvpa_category", "PAD680", "pad680_hours",
+  
+  # Liver outcomes
+  "LUXCAPM", "LUXSMED", "masld_288", "hepatic_fibrosis"
+)
+
+# Define explanatory variables by removing the dependent variable 
+# and liver-related variables not included as explanatory variables
+explanatory_vars <- setdiff(
+  descriptive_vars,
+  c(dependent_variable, "hepatic_fibrosis", "LUXSMED", "LUXCAPM", "PAD680")
+)
+
+# Create a named vector with custom labels
+custom_labels <- list(
+  
+  # Demographic
+  RIDAGEYR = "Age (years)",
+  RIAGENDR = "Sex, Male",
+  race_3 = "Race/Ethnicity",
+  education = "educational level",
+  INDFMPIR = "Income-to-Poverty Ratio",
+  
+  # Anthropometric
+  BMXBMI = "BMI (kg/m²)",
+  BMXWAIST = "Waist circumference (cm)",
+  overweight_obese = "Overweight/Obesity",
+  
+  # Blood pressure
+  sbp = "SBP (mmHg)",
+  dbp = "DBP (mmHg)",
+  htn = "Hypertension",
+  
+  # Lipids
+  LBXTC = "Total cholesterol (mg/dL)",
+  LBDLDL = "LDL-C (mg/dL)",
+  LBDHDD = "HDL-C (mg/dL)",
+  LBXTR = "Triglycerides (mg/dL)",
+  low_hdl = "Low HDL-C",
+  dyslipidemia = "dyslipidemia",
+  
+  # Glucose
+  LBXGLU = "Fasting glucose (mg/dL)",
+  LBXGH = "HbA1c (%)",
+  dysglycaemia_dm2 = "Prediabetes/Diabetes",
+  
+  # Lifestyle
+  kcal_mean = "Total energy intake (kcal/day)",
+  tsugar_adj = "Sugar intake",
+  tsatfat_adj = "Saturated fat intake",
+  smoking = "smoking",
+  alcohol_use = "Alcohol use",
+  
+  # Physical activity
+  mvpa_category = "Physical activity (≥150 min/week)",
+  PAD680 = "Sedentary behavior (min/day)",
+  pad680_hours = "Sedentary behavior (hours/day)",
+  
+  # Liver outcomes
+  LUXCAPM = "CAP (dB/m)",
+  LUXSMED = "Liver stiffness (kPa)",
+  masld_288 = "MASLD",
+  hepatic_fibrosis = "Advanced liver fibrosis"
+  
+)
+
+```
+
+## 2. Regression Models
+
+### 2.1 Simple Regression Models
+
+```{r map-model-outliers, message=FALSE, warning=FALSE}
+
+# Map influential observations back to the survey design using DFBETAs
+
+adjust_without_outliers <- function(model, design, response, id_var, model_name) {
+  
+  # Validate model
+  if (is.null(model) || !inherits(model, "svyglm")) {
+    stop("Model must be a valid svyglm object")
+  }
+  
+  # Calculate weighted DFBETAs
+  inf <- influence(model)
+  dfbeta_vals <- inf$coefficients
+  # Matrix: rows = observations, columns = coefficients
+  
+  # Cutoff criterion: |DFBETA| > 2/sqrt(n)
+  n <- nrow(model.frame(model))
+  cutoff <- 2 / sqrt(n)
+  
+  # Identify influential observations for any coefficient
+  influential_cases <- which(
+    apply(abs(dfbeta_vals), 1, function(x) any(x > cutoff))
+  )
+  
+  # Plot DFBETAs for the main exposure
+  if ("PAD680" %in% colnames(dfbeta_vals)) {
+    plot(
+      dfbeta_vals[, "PAD680"],
+      type = "h",
+      main = paste("DFBETA - Model", model_name),
+      ylab = "DFBETA for Sedentary Behavior"
+    )
+    abline(h = c(-cutoff, cutoff), col = "red", lty = 2)
+  }
+  
+  # Obtain model variables
+  model_vars <- all.vars(formula(model))
+  
+  # Map IDs
+  model_data <- model.frame(model)
+  complete_survey_data <- design$variables[
+    complete.cases(design$variables[model_vars]),
+  ]
+  
+  # Obtain IDs of influential observations
+  if (length(influential_cases) > 0) {
+    outlier_ids <- complete_survey_data[[id_var]][influential_cases]
+  } else {
+    outlier_ids <- numeric(0)
+  }
+  
+  # Exclude influential observations and refit model
+  if (length(outlier_ids) > 0) {
+    keep_cases <- !(design$variables[[id_var]] %in% outlier_ids)
+    design_without_outliers <- design[keep_cases, ]
+  } else {
+    design_without_outliers <- design
+    message("No influential observations found; using original design")
+  }
+  
+  # Refit model without influential observations
+  if (length(outlier_ids) > 0) {
+    model_without_outlier <- svyglm(
+      formula = formula(model),
+      design = design_without_outliers,
+      family = model$family
+    )
+  } else {
+    model_without_outlier <- model
+  }
+  
+  # Print information
+  print(paste("=== MODEL", model_name, "==="))
+  print(paste("Observations in original model:", nrow(model_data)))
+  print(paste("Complete survey observations:", nrow(complete_survey_data)))
+  print(paste("Influential observations (DFBETA):", length(outlier_ids)))
+  
+  return(list(
+    model_without_outlier = model_without_outlier,
+    outliers = outlier_ids,
+    cutoff = cutoff,
+    influential_cases = influential_cases,
+    dfbeta_vals = dfbeta_vals
+  ))
+}
+```
+_Note:_ Outlier analysis was performed as a sensitivity analysis. DFBETA-based influence diagnostics are not fully validated for complex survey designs and should therefore not be interpreted as a formal outlier detection procedure for survey-weighted regression models. The results are used to assess the robustness of the primary estimates to potentially influential observations.
+
+```{r simple-regresison-with-and-without-outliers, message=FALSE, warning=FALSE}
+
+# Function to run univariate regression with and without influential observations
+# Requires the adjust_without_outliers function
+
+run_univariate <- function(var, design, response, id_var, labels) {
+  f <- as.formula(paste(response, "~", var))
+  
+  # Original model
+  model <- svyglm(f, design = design, family = quasibinomial())
+  
+  # Refit without influential observations
+  res <- adjust_without_outliers(
+    model, design, response, id_var, var
+  )
+  
+  # Formatted tables
+  tbl_original <- tbl_regression(
+    model,
+    exponentiate = TRUE,
+    conf.int = TRUE,
+    label = labels
+  ) %>%
+    add_glance_table(include = c(nobs))
+  
+  tbl_without_outlier <- tbl_regression(
+    res$model_without_outlier,
+    exponentiate = TRUE,
+    conf.int = TRUE,
+    label = labels
+  ) %>%
+    add_glance_table(include = c(nobs))
+  
+  return(list(
+    original = tbl_original,
+    without_outlier = tbl_without_outlier
+  ))
+}
+
+# Run univariate models for all explanatory variables
+univariate_results <- lapply(explanatory_vars, function(v) {
+  run_univariate(
+    v,
+    svy_design_subset,
+    dependent_variable,
+    "SEQN",
+    custom_labels
+  )
+})
+
+# Stack all tables WITH influential observations
+univ_tbl <- purrr::map(
+  univariate_results,
+  "original"
+)
+
+univ_tbl <- tbl_stack(univ_tbl) %>%
+  modify_header(
+    label ~ "**Variable**",
+    estimate ~ "**OR (95% CI)**",
+    p.value ~ "**P-value**"
+  ) %>%
+  modify_caption("**Univariate Analysis - WITH influential observations**") %>%
+  bold_labels()
+
+# Stack all tables WITHOUT influential observations
+univ_tbl_without_outlier <- purrr::map(
+  univariate_results,
+  "without_outlier"
+)
+
+univ_tbl_without_outlier <- tbl_stack(univ_tbl_without_outlier) %>%
+  modify_header(
+    label ~ "**Variable**",
+    estimate ~ "**OR (95% CI)**",
+    p.value ~ "**P-value**"
+  ) %>%
+  modify_caption("**Univariate Analysis - WITHOUT influential observations**") %>%
+  bold_labels()
+
+univ_tbl
+univ_tbl_without_outlier
+
+# Export results
+export(
+  as_tibble(univ_tbl),
+  here("Tables", paste0(dependent_variable, "_univariate_table.csv"))
+)
+
+export(
+  as_tibble(univ_tbl_without_outlier),
+  here("Tables", paste0(
+    dependent_variable,
+    "_univariate_table_without_outlier.csv"
+  ))
+)
+
+gtsave(
+  as_gt(univ_tbl),
+  here("Tables", paste0(dependent_variable, "_univariate_table.docx"))
+)
+
+gtsave(
+  as_gt(univ_tbl),
+  here("Tables", paste0(dependent_variable, "_univariate_table.pdf"))
+)
+
+gtsave(
+  as_gt(univ_tbl_without_outlier),
+  here("Tables", paste0(
+    dependent_variable,
+    "_univariate_table_without_outlier.docx"
+  ))
+)
+
+gtsave(
+  as_gt(univ_tbl_without_outlier),
+  here("Tables", paste0(
+    dependent_variable,
+    "_univariate_table_without_outlier.pdf"
+  ))
+)
+```
+
+## 2.2 Modelos de Regressão Multivariada - Abordagem Aditiva Hierárquica
+
+## 2.2 Multivariable Regression Models - Hierarchical Additive Approach
+
+```{r hierarchical-additive-regression-models, message=FALSE, warning=FALSE}
+
+# Sociodemographic confounders
+confounders_model_1 <- c(
+  "RIDAGEYR",
+  "RIAGENDR",
+  "race_3",
+  "education",
+  "INDFMPIR",
+  "smoking",
+  "alcohol_use",
+  "kcal_mean"
+)
+
+# Model 1 + physical activity
+confounders_model_2 <- c(
+  confounders_model_1,
+  "mvpa_category"
+)
+
+# Model 2 + metabolic mediators
+confounders_model_3 <- c(
+  confounders_model_2,
+  "overweight_obese",
+  "htn",
+  "dysglycaemia_dm2",
+  "dyslipidemia"
+)
+
+# Complete models for regression analyses
+model_1_vars <- c("pad680_hours", confounders_model_1)
+model_2_vars <- c("pad680_hours", confounders_model_2)
+model_3_vars <- c("pad680_hours", confounders_model_3)
+
+model_vars <- list(
+  model_1_vars,
+  model_2_vars,
+  model_3_vars
+)
+
+# ====================
+# ORIGINAL MODELS
+# ====================
+
+regression_models <- list()
+
+for (i in seq_along(model_vars)) {
+  vars <- model_vars[[i]]
+  formula <- reformulate(
+    termlabels = vars,
+    response = dependent_variable
+  )
+  
+  regression_models[[i]] <- svyglm(
+    formula = formula,
+    design = svy_design_subset,
+    family = quasibinomial(link = "logit")
+  )
+}
+
+# Tables for original models
+original_tables <- lapply(seq_along(regression_models), function(i) {
+  model <- regression_models[[i]]
+  n_obs <- nrow(model$model)
+  
+  tbl_regression(
+    model,
+    exponentiate = TRUE,
+    conf.int = TRUE,
+    label = custom_labels
+  ) %>%
+    modify_caption(
+      paste0("**Original Model ", i, " (N = ", n_obs, ")**")
+    )
+})
+
+# Display original models
+tbl_merge(
+  tbls = original_tables,
+  tab_spanner = paste("Original Model", seq_along(original_tables))
+)
+
+# ====================
+# MODELS WITHOUT INFLUENTIAL OBSERVATIONS
+# ====================
+
+regression_models_without_outliers <- list()
+
+for (i in seq_along(regression_models)) {
+  cat("\n=== Processing Model", i, "===\n")
+  
+  regression_models_without_outliers[[i]] <- adjust_without_outliers(
+    model = regression_models[[i]],
+    design = svy_design_subset,
+    response = dependent_variable,
+    id_var = "SEQN",
+    model_name = paste0("Total_", i)
+  )
+}
+
+# Extract refitted models
+regression_models_refit <- lapply(
+  regression_models_without_outliers,
+  function(x) x$model_without_outlier
+)
+
+# Create tables for models without influential observations
+tables_without_outliers <- lapply(
+  seq_along(regression_models_refit),
+  function(i) {
+    model <- regression_models_refit[[i]]
+    
+    # Extract number of observations manually
+    n_obs <- nrow(model$model)
+    
+    tbl_regression(
+      model,
+      exponentiate = TRUE,
+      conf.int = TRUE,
+      label = custom_labels
+    ) %>%
+      modify_caption(
+        paste0("**Model ", i, " (N = ", n_obs, ")**")
+      )
+  }
+)
+
+# Display models without influential observations
+tbl_merge(
+  tbls = tables_without_outliers,
+  tab_spanner = paste(
+    "Model Without Influential Observations",
+    seq_along(tables_without_outliers)
+  )
+)
+
+# ====================
+# SIDE-BY-SIDE COMPARISON
+# ====================
+
+comparison_table <- tbl_merge(
+  tbls = c(original_tables, tables_without_outliers),
+  tab_spanner = c(
+    paste("Original", seq_along(original_tables)),
+    paste("Without Influential Observations",
+          seq_along(tables_without_outliers))
+  )
+)
+
+comparison_table
+```
+
+
+```{r check-removed-outliers, message=FALSE, warning=FALSE}
+
+# Summary of influential observations by model
+outlier_summary <- data.frame(
+  Model = paste("Model", 1:length(regression_models_without_outliers)),
+  N_Outliers = sapply(
+    regression_models_without_outliers,
+    function(x) length(x$outliers)
+  ),
+  DFBETA_Cutoff = sapply(
+    regression_models_without_outliers,
+    function(x) round(x$cutoff, 4)
+  )
+)
+
+print(outlier_summary)
+
+# Check which IDs were removed from each model
+for (i in seq_along(regression_models_without_outliers)) {
+  cat("\n=== Model", i, "===\n")
+  cat(
+    "Removed IDs:",
+    if (length(regression_models_without_outliers[[i]]$outliers) > 0) {
+      head(
+        regression_models_without_outliers[[i]]$outliers,
+        10
+      )
+    } else {
+      "None"
+    },
+    "\n"
+  )
+}
+
+```
+
+# 2.3 Assessment of Multiple Regression Assumptions
+
+## 2.3.1 Multicollinearity and Linearity in the Logit
+
+```{r regression-diagnostics, message=FALSE, warning=FALSE}
+
+# Regression model diagnostics
+
+# ===== Multicollinearity =====
+
+# Calculate VIF for each model
+vif_results <- lapply(regression_models, function(model) {
+  tryCatch({
+    vif(model)
+  }, error = function(e) {
+    message("Error calculating VIF: ", e$message)
+    return(NULL)
+  })
+})
+
+# Display results
+vif_results
+
+cat(
+  "\n=== VIF Interpretation ===\n",
+  "VIF ≥ 5 may indicate substantial multicollinearity; ",
+  "a more conservative threshold of VIF ≥ 2.5 may also be considered.\n"
+)
+
+# ===== Linearity between continuous predictors and the logit =====
+
+crPlots(regression_models[[1]])
+crPlots(regression_models[[2]])
+crPlots(regression_models[[3]])
+
+cat(
+  "\n=== Interpretation of the linearity between continuous predictors and the logit ===\n",
+  "\n",
+  "- For categorical variables: differences in residual patterns between categories do not represent an assessment of linearity.\n",
+  "- For continuous variables: assess whether the smoothed residual trend is approximately consistent with the expected linear relationship.\n"
+)
+```
+**Note:** Multicollinearity and linearity diagnostics were evaluated as exploratory assessments. Standard diagnostic procedures implemented in the `car` package are not specifically validated for complex survey-weighted regression models and should therefore be interpreted cautiously.
+
+## 2.3.2 Linearity Assessment in Multiple Regression
+
+```{r multivariable-regression-linearity-assessment, message=FALSE, warning=FALSE}
+
+# ====================
+# Linearity Assessment (quadratic term) - Model 3
+# ====================
+
+# Assess whether the relationship between sedentary time (pad680_hours)
+# and the logit of MASLD is linear by adding a quadratic term to the
+# fully adjusted model (Model 3) and testing its significance using
+# a Wald test.
+
+model_3_quadratic <- svyglm(
+  reformulate(
+    c("pad680_hours", "I(pad680_hours^2)", confounders_model_3),
+    dependent_variable
+  ),
+  design = svy_design_subset,
+  family = quasibinomial(link = "logit")
+)
+
+p_nonlinearity <- regTermTest(
+  model_3_quadratic,
+  "I(pad680_hours^2)"
+)$p
+
+cat(
+  "\n=== Linearity Assessment (quadratic term) - Model 3 ===\n",
+  "P-value for the quadratic term:", signif(p_nonlinearity, 3), "\n",
+  ifelse(
+    p_nonlinearity < 0.05,
+    "-> Evidence of nonlinearity (p < 0.05)\n",
+    "-> No evidence of nonlinearity (p >= 0.05) - linear relationship is adequate\n"
+  )
+)
+```
+
+```{r predicted-probability-masld, message=FALSE, warning=FALSE}
+
+# ====================
+# Figure: Predicted probability of MASLD by sedentary time (Model 3)
+# 1st to 99th percentile (P1-P99)
+# ====================
+
+model_3_prediction <- regression_models[[3]]
+
+model_data <- svy_design_subset$variables
+
+# --------------------------------------------------------
+# Grid of pad680_hours values (1st to 99th percentile)
+# --------------------------------------------------------
+
+pad680_interval <- quantile(
+  model_data$pad680_hours,
+  probs = c(0.01, 0.99),
+  na.rm = TRUE
+)
+
+pad680_grid <- seq(
+  pad680_interval[1],
+  pad680_interval[2],
+  length.out = 100
+)
+
+# --------------------------------------------------------
+# Fix remaining covariates at representative values
+# --------------------------------------------------------
+
+fix_covariate <- function(x) {
+  if (is.numeric(x)) {
+    mean(x, na.rm = TRUE)
+  } else {
+    mode <- names(sort(table(x), decreasing = TRUE))[1]
+    factor(mode, levels = levels(as.factor(x)))
+  }
+}
+
+fixed_covariates <- lapply(
+  model_data[confounders_model_3],
+  fix_covariate
+)
+
+prediction_data <- data.frame(
+  pad680_hours = pad680_grid,
+  fixed_covariates
+)
+
+# --------------------------------------------------------
+# Prediction on the logit scale
+# --------------------------------------------------------
+
+prediction <- predict(
+  model_3_prediction,
+  newdata = prediction_data,
+  type = "link"
+)
+
+# Model matrix for the prediction data
+X_prediction <- model.matrix(
+  delete.response(terms(model_3_prediction)),
+  data = prediction_data
+)
+
+# Variance-covariance matrix of model coefficients
+vcov_model <- vcov(model_3_prediction)
+
+# Standard errors of the predicted linear predictor
+prediction_se <- sqrt(
+  rowSums(
+    (X_prediction %*% vcov_model) * X_prediction
+  )
+)
+
+prediction_data <- prediction_data %>%
+  mutate(
+    logit = as.numeric(prediction),
+    standard_error = prediction_se,
+    probability = plogis(logit),
+    lower_ci = plogis(logit - 1.96 * standard_error),
+    upper_ci = plogis(logit + 1.96 * standard_error)
+  )
+
+# --------------------------------------------------------
+# Plot, with the X-axis explicitly limited to P1-P99
+# --------------------------------------------------------
+
+dose_response_plot <- ggplot(
+  prediction_data,
+  aes(x = pad680_hours, y = probability)
+) +
+  geom_ribbon(
+    aes(ymin = lower_ci, ymax = upper_ci),
+    fill = "steelblue",
+    alpha = 0.2
+  ) +
+  geom_line(
+    color = "steelblue",
+    linewidth = 1
+  ) +
+  geom_rug(
+    data = model_data,
+    aes(x = pad680_hours, y = NULL),
+    sides = "b",
+    alpha = 0.15,
+    inherit.aes = FALSE
+  ) +
+  coord_cartesian(
+    xlim = c(pad680_interval[1], pad680_interval[2])
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  labs(
+    x = "Sedentary time (hours/day)",
+    y = "Predicted probability of MASLD"
+  ) +
+  theme_minimal(base_size = 13)
+
+dose_response_plot
+
+# Save figure
+ggsave(
+  here(
+    "Figures",
+    "Figure2_dose_response_sedentary_behavior_MASLD.png"
+  ),
+  plot = dose_response_plot,
+  width = 7,
+  height = 5,
+  dpi = 300
+)
+
+extreme_predictions <- prediction_data %>%
+  slice(c(1, n())) %>%
+  select(
+    pad680_hours,
+    probability,
+    lower_ci,
+    upper_ci
+  )
+
+print(extreme_predictions)
+
+cat(
+  sprintf(
+    "Sedentary time = %.1f h/day: predicted probability = %.1f%% (95%% CI: %.1f-%.1f%%)\n",
+    extreme_predictions$pad680_hours[1],
+    extreme_predictions$probability[1] * 100,
+    extreme_predictions$lower_ci[1] * 100,
+    extreme_predictions$upper_ci[1] * 100
+  ),
+  sprintf(
+    "Sedentary time = %.1f h/day: predicted probability = %.1f%% (95%% CI: %.1f-%.1f%%)\n",
+    extreme_predictions$pad680_hours[2],
+    extreme_predictions$probability[2] * 100,
+    extreme_predictions$lower_ci[2] * 100,
+    extreme_predictions$upper_ci[2] * 100
+  )
+)
+```
+
+# 2.4 Análise exploratória - Subgrupos
+
+```{r exploratory-subgroup-analysis, message=FALSE, warning=FALSE}}
+
+# ============================================================
+# Custom labels specific to this analysis
+# ============================================================
+
+custom_labels_2 <- c(
+  custom_labels,
+  list(
+    ridageyr_cat  = "Age Group",
+    indfmpir_cat = "Poverty Income Ratio (category)",
+    kcal_mean_cat = "Total Energy Intake (category)"
+  )
+)
+
+
+# ============================================================
+# Helper function to format p-values
+# ============================================================
+
+format_p <- function(p, decimals = 3) {
+  
+  ifelse(
+    is.na(p),
+    NA_character_,
+    ifelse(
+      p < 10^(-decimals),
+      paste0("<0.", strrep("0", decimals - 1), "1"),
+      sprintf(paste0("%.", decimals, "f"), p)
+    )
+  )
+}
+
+
+# ============================================================
+# Helper function to remove covariates that are constant
+# within a subgroup
+# ============================================================
+
+remove_constant_covariates <- function(design_sub, variables) {
+  
+  keep <- sapply(variables, function(v) {
+    
+    values <- na.omit(design_sub$variables[[v]])
+    
+    if (is.factor(values) || is.character(values)) {
+      length(unique(values)) >= 2
+    } else {
+      TRUE
+    }
+    
+  })
+  
+  removed <- variables[!keep]
+  
+  if (length(removed) > 0) {
+    cat(
+      "    Removing covariate(s) that are constant within the subgroup:",
+      paste(removed, collapse = ", "),
+      "\n"
+    )
+  }
+  
+  variables[keep]
+}
+
+
+# ============================================================
+# Pairs of categorical and continuous variables to exclude
+# simultaneously
+# ============================================================
+
+variable_pairs <- list(
+  ridageyr_cat  = c("ridageyr_cat", "RIDAGEYR"),
+  kcal_mean_cat = c("kcal_mean_cat", "kcal_mean"),
+  indfmpir_cat = c("indfmpir_cat", "INDFMPIR")
+)
+
+
+# ============================================================
+# Subgroup variables
+# ============================================================
+
+subgroups <- c(
+  "mvpa_category",
+  "RIAGENDR",
+  "ridageyr_cat",
+  "race_3",
+  "education",
+  "indfmpir_cat",
+  "overweight_obese",
+  "dysglycaemia_dm2",
+  "htn",
+  "dyslipidemia",
+  "kcal_mean_cat",
+  "smoking",
+  "alcohol_use"
+)
+
+
+# ============================================================
+# Main function
+# ============================================================
+
+subgroup_analysis <- function(
+    design,
+    response,
+    exposure = "pad680_hours",
+    subgroups,
+    adjustment
+) {
+  
+  final_results <- list()
+  
+  
+  for (subgroup in subgroups) {
+    
+    cat("\n=============================\n")
+    cat("Subgroup:", subgroup, "\n")
+    
+    
+    adjustment_interaction <- setdiff(
+      adjustment,
+      if (!is.null(variable_pairs[[subgroup]])) {
+        variable_pairs[[subgroup]]
+      } else {
+        subgroup
+      }
+    )
+    
+    
+    # --------------------------------------------------------
+    # Interaction model
+    # --------------------------------------------------------
+    
+    p_interaction <- tryCatch({
+      
+      interaction_formula <- reformulate(
+        c(
+          exposure,
+          subgroup,
+          adjustment_interaction,
+          paste0(exposure, ":", subgroup)
+        ),
+        response = response
+      )
+      
+      interaction_model <- svyglm(
+        interaction_formula,
+        design = design,
+        family = quasibinomial()
+      )
+      
+      regTermTest(
+        interaction_model,
+        paste0(exposure, ":", subgroup)
+      )$p
+      
+    }, error = function(e) {
+      
+      cat(
+        "Error in the interaction model for subgroup",
+        subgroup,
+        ":",
+        e$message,
+        "\n"
+      )
+      
+      NA
+    })
+    
+    
+    # --------------------------------------------------------
+    # Identify valid subgroup levels
+    # --------------------------------------------------------
+    
+    levels <- unique(
+      na.omit(
+        design$variables[[subgroup]]
+      )
+    )
+    
+    
+    for (level in levels) {
+      
+      cat("  Category:", level, "\n")
+      
+      
+      tryCatch({
+        
+        
+        # ----------------------------------------------------
+        # Create subgroup-specific survey design
+        # ----------------------------------------------------
+        
+        indices <- which(
+          !is.na(design$variables[[subgroup]]) &
+            design$variables[[subgroup]] == level
+        )
+        
+        
+        if (length(indices) == 0)
+          next
+        
+        
+        design_sub <- design[indices, ]
+        
+        
+        # Check survey weights
+        if (any(is.na(weights(design_sub)))) {
+          cat("NA survey weight found - skipping category\n")
+          next
+        }
+        
+        
+        # Minimum sample size
+        if (nrow(design_sub$variables) < 50)
+          next
+        
+        
+        # ----------------------------------------------------
+        # Remove covariates that are constant within subgroup
+        # ----------------------------------------------------
+        
+        adjustment_sub <- remove_constant_covariates(
+          design_sub,
+          adjustment_interaction
+        )
+        
+        
+        # ----------------------------------------------------
+        # Stratified model
+        # ----------------------------------------------------
+        
+        subgroup_formula <- reformulate(
+          c(
+            exposure,
+            adjustment_sub
+          ),
+          response = response
+        )
+        
+        
+        subgroup_model <- svyglm(
+          subgroup_formula,
+          design = design_sub,
+          family = quasibinomial()
+        )
+        
+        
+        # ----------------------------------------------------
+        # Extract exposure effect
+        # ----------------------------------------------------
+        
+        result <- broom::tidy(
+          subgroup_model,
+          exponentiate = TRUE,
+          conf.int = TRUE
+        ) %>%
+          filter(term == exposure) %>%
+          mutate(
+            
+            Subgroup = subgroup,
+            
+            Category = level,
+            
+            N = nobs(subgroup_model),
+            
+            OR_CI95 = sprintf(
+              "%.2f (%.2f–%.2f)",
+              estimate,
+              conf.low,
+              conf.high
+            ),
+            
+            P = format_p(p.value),
+            
+            P_interaction = ifelse(
+              level == levels[1],
+              format_p(p_interaction),
+              NA_character_
+            )
+            
+          ) %>%
+          select(
+            Subgroup,
+            Category,
+            N,
+            OR_CI95,
+            P,
+            P_interaction
+          )
+        
+        
+        final_results[[paste0(subgroup, "_", level)]] <- result
+        
+        
+      }, error = function(e) {
+        
+        cat(
+          "Error in category",
+          level,
+          "of subgroup",
+          subgroup,
+          ":",
+          e$message,
+          "\n"
+        )
+        
+      })
+      
+      
+    }
+    
+    
+  }
+  
+  table <- bind_rows(final_results)
+  
+  # ----------------------------------------------------------
+  # Apply readable labels to subgroup names
+  # ----------------------------------------------------------
+  
+  labels_vec <- unlist(custom_labels_2)
+  
+  table$Subgroup <- ifelse(
+    !is.na(labels_vec[table$Subgroup]),
+    labels_vec[table$Subgroup],
+    table$Subgroup
+  )
+  
+  table
+}
+
+
+# ============================================================
+# Run subgroup analysis
+# ============================================================
+
+subgroup_table <- subgroup_analysis(
+  
+  design = svy_design_subset,
+  
+  response = dependent_variable,
+  
+  exposure = "pad680_hours",
+  
+  subgroups = subgroups,
+  
+  adjustment = confounders_model_3
+)
+
+
+# Display results
+
+subgroup_table
+```
